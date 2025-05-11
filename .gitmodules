@@ -1,3 +1,6 @@
 [submodule "ext/locate-3d"]
 	path = ext/locate-3d
 	url = https://github.com/facebookresearch/locate-3d
+[submodule "ext/jepa"]
+	path = ext/jepa
+	url = https://github.com/facebookresearch/jepa
