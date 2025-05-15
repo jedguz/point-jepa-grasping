@@ -4,3 +4,9 @@
 [submodule "ext/jepa"]
 	path = ext/jepa
 	url = https://github.com/facebookresearch/jepa
+[submodule "ext/voxel-mae"]
+	path = ext/voxel-mae
+	url = https://github.com/georghess/voxel-mae.git
+[submodule "ext/jepa3d"]
+	path = ext/jepa3d
+	url = https://github.com/facebookresearch/locate-3d.git

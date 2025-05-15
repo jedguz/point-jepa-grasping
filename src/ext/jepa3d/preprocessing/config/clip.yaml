@@ -1,0 +1,31 @@
+voxelized_pointcloud:
+  voxel_size: 0.05
+  dim_mins: null
+  dim_maxs: null
+  feature_pool_method: "mean"
+  limit_voxels: null
+
+feature_slam:
+  _target_: preprocessing.unproject_rgbd_feature_slam.UnprojectRGBDFeatureSLAM
+  image_feature_generator:
+    _target_: preprocessing.image_features.mask_embedding.MaskEmbeddingFeatureImageGenerator
+    mask_generator:
+      _target_: segment_anything.SamAutomaticMaskGenerator
+      model:
+        _target_: preprocessing.image_features.mask_embedding.get_sam_model
+        model_path: "preprocessing/weights/sam_vit_h_4b8939.pth"
+        version: "vit_h"
+        device: cuda
+      points_per_side: 32
+      pred_iou_thresh: 0.86
+      crop_n_layers: 1
+      crop_n_points_downscale_factor: 2
+    image_text_encoder:
+      _target_: preprocessing.image_features.clip_encoder.ClipEncoder
+      version: "ViT-L/14"
+      device: cuda
+    device: cuda
+  device: cuda
+
+
+unproject_frame_batch_size: 1
