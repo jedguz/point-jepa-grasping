@@ -7,3 +7,4 @@ __pycache__/
 *.pt
 wandb/
 src/ext/jepa3d/locate3d_data/dataset/*.json
+src/ext/jepa3d/locate3d_data/dataset/*.json
