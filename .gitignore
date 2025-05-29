@@ -9,3 +9,11 @@ wandb/
 src/ext/jepa3d/locate3d_data/dataset/*.json
 src/ext/jepa3d/locate3d_data/dataset/*.json
 .venv/
+build/
+dist/
+*.egg-info/
+*.egg-info
+src/ADLR.egg-info
+*.egg-info/
+
+
