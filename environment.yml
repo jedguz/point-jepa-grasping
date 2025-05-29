@@ -15,11 +15,6 @@ dependencies:
   - ninja
   - pybind11        # <— ADD THIS
 
-  # core PyTorch (CPU-only for now)
-  - pytorch=2.0.1
-  - torchvision=0.15.2
-  # - cudatoolkit=11.7   # uncomment when you have an NVIDIA GPU + driver
-
   - pip
   - pip:
     - git+https://github.com/facebookresearch/pytorch3d.git@stable
