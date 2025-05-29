@@ -1,0 +1,9 @@
+Looking in links: https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/torch2/cu124/20240202/index.html
+Requirement already satisfied: torch in /opt/python/3.10/lib/python3.10/site-packages (2.4.0+cu124)
+Collecting torch
+  Downloading torch-2.7.0-cp310-cp310-manylinux_2_28_x86_64.whl.metadata (29 kB)
+Requirement already satisfied: torchvision in /opt/python/3.10/lib/python3.10/site-packages (0.19.0+cu124)
+Collecting torchvision
+  Downloading torchvision-0.22.0-cp310-cp310-manylinux_2_28_x86_64.whl.metadata (6.1 kB)
+Collecting torchaudio
+  Downloading torchaudio-2.7.0-cp310-cp310-manylinux_2_28_x86_64.whl.metadata (6.6 kB)

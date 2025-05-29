@@ -1,0 +1,17 @@
+# requirements.txt
+
+# your local packages
+-e src/ext/jepa3d
+# -e src/ext/pointnet2
+
+# core DL libs
+torch
+torchvision
+torchaudio
+
+# Core I/O and utilities
+iopath
+fvcore
+
+https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt221/\
+pytorch3d-0.7.6-cp310-cp310-linux_x86_64.whl
