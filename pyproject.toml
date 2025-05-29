@@ -1,7 +1,0 @@
-[project]
-name = "ADLR"
-version = "0.1"
-
-[tool.poetry.dependencies]
-jepa3d = { path = "src/ext/jepa3d", develop = true }
-pointnet2 = { path = "src/ext/pointnet2", develop = true }
