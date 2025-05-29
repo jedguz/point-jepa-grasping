@@ -1,5 +1,3 @@
-Metadata-Version: 2.2
+Metadata-Version: 2.4
 Name: ADLR
 Version: 0.1
-Requires-Dist: jepa3d
-Dynamic: requires-dist
