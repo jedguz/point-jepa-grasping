@@ -1,5 +1,5 @@
 import torch
-from models.encoders.jepa3d_backbone import Encoder
+from models.encoders.jepa3d_wrapper import Encoder
 
 encoder = Encoder(pretrained=False)
 encoder.eval()
