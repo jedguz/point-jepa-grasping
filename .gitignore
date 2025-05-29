@@ -17,3 +17,4 @@ dist/
 *.egg-info
 src/ADLR.egg-info
 *.egg-info/
+/test-env/
