@@ -18,3 +18,11 @@ dist/
 src/ADLR.egg-info
 *.egg-info/
 /test-env/
+shapenet_data/
+shapenet_extracted/
+pointclouds/
+*.obj
+*.ply
+*.npy
+*.zip
+data/
