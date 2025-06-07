@@ -4,10 +4,10 @@ Script: extract_pointclouds.py
 Location: place this file in the project root under the `scripts/` directory.
 
 Description:
-Downloads a ShapeNet category ZIP from your GCS bucket, unpacks all
+Downloads ShapeNet category ZIPs from your GCS bucket, unpacks all
 `.obj` meshes (preserving subdirectory structure), samples point clouds at
 configured densities for each mesh *in parallel*, and uploads the resulting
-`.npz` files to your existing GCS bucket:
+`.npz` files to an existing GCS bucket:
 
   gs://<DST_BUCKET>/<category_id>/<mesh_id>/pc_<N>.npz
 
@@ -23,7 +23,7 @@ python scripts/extract_pointclouds.py \
     --src_bucket shapenet_bucket \
     --category_id 02747177 \
     --dst_bucket adlr2025-pointclouds \
-    --densities 2048 10240 51200 \
+    --densities 2048,10240,51200 \
     --jobs 16
 
 Alternate (direct ZIP URI):
@@ -31,21 +31,16 @@ python scripts/extract_pointclouds.py \
     --project adlr2025 \
     --src_zip gs://shapenet_bucket/02747177.zip \
     --dst_bucket adlr2025-pointclouds \
-    --densities 2048 10240 51200 \
+    --densities 2048,10240,51200 \
     --jobs 16
-
-Options:
-  --jobs N     Number of parallel worker processes (default: CPU count)
-
-This enables full CPU utilization for mesh sampling.
 """
 import argparse
 import os
 import subprocess
 import tempfile
 import glob
-import open3d as o3d
 import numpy as np
+import open3d as o3d
 from multiprocessing import Pool, cpu_count
 
 
@@ -57,24 +52,18 @@ def run(cmd):
 
 def sample_and_upload_mesh(args):
     mesh_file, category, densities, dst_bucket = args
-    # Extract object ID: assume structure .../<category>/<object_id>/models/...obj
-    # Mesh file lives in .../<object_id>/models/*.obj, so parent parent dir is object_id
-    object_dir = os.path.dirname(mesh_file)
-    mesh_parent = os.path.dirname(object_dir)
-    mesh_id = os.path.basename(mesh_parent)
+    # infer mesh_id as the immediate parent directory of the .obj file
+    mesh_id = os.path.basename(os.path.dirname(mesh_file))
     mesh = o3d.io.read_triangle_mesh(mesh_file)
     mesh.compute_vertex_normals()
     with tempfile.TemporaryDirectory() as tmpm:
         for N in densities:
             pts = np.asarray(mesh.sample_points_uniformly(number_of_points=N).points)
-            # Save under a per-mesh tmp folder to avoid naming collisions
-            local_dir = os.path.join(tmpm, mesh_id)
-            os.makedirs(local_dir, exist_ok=True)
-            npz_tmp = os.path.join(local_dir, f"pc_{N}.npz")
-            np.savez_compressed(npz_tmp, points=pts)
+            local_npz = os.path.join(tmpm, f"pc_{N}.npz")
+            np.savez_compressed(local_npz, points=pts)
             gcs_path = f"gs://{dst_bucket}/{category}/{mesh_id}/pc_{N}.npz"
-            run(f"gsutil -q cp {npz_tmp} {gcs_path}")
-            print(f"Uploaded {gcs_path}")f"Uploaded {gcs_path}")
+            run(f"gsutil -q cp {local_npz} {gcs_path}")
+            print(f"Uploaded {gcs_path}")
 
 
 def process_zip(zip_source, category, densities, dst_bucket, jobs):
@@ -84,12 +73,12 @@ def process_zip(zip_source, category, densities, dst_bucket, jobs):
         zip_path = os.path.join(tmp, zip_name)
         run(f"gsutil -q cp {zip_source} {zip_path}")
 
-        # 2) Unzip all .obj meshes preserving folder structure
+        # 2) Unzip all .obj meshes preserving path structure
         mesh_dir = os.path.join(tmp, category)
         os.makedirs(mesh_dir, exist_ok=True)
         run(f"unzip -q {zip_path} '*.obj' -d {mesh_dir}")
 
-        # 3) Gather all mesh files
+        # 3) Gather mesh files recursively
         mesh_files = glob.glob(os.path.join(mesh_dir, '**', '*.obj'), recursive=True)
         if not mesh_files:
             raise RuntimeError(f"No .obj files found in {zip_source}")
@@ -102,12 +91,17 @@ def process_zip(zip_source, category, densities, dst_bucket, jobs):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--project", required=True, help="GCP project ID for gsutil and gcloud operations")
+    src = parser.add_mutually_exclusive_group(required=True)
+    src.add_argument("--src_bucket", help="GCS bucket name where category ZIPs live (no gs://)")
+    src.add_argument("--src_zip", help="Full GCS URI to a single category ZIP file")
+    parser.add_argument("--category_id", help="Category ID (ZIP filename without .zip); required with --src_bucket")
+    parser.add_argument("--dst_bucket", required=True, help="Destination GCS bucket for .npz outputs (no gs://)")
     parser.add_argument(
-    "--densities",
-    type=lambda s: [int(item) for item in s.split(",")],
-    default=[2048, 10240, 51200],
-    help="Comma-separated point counts to sample, e.g. 2048,10240,51200"
-)
+        "--densities", type=lambda s: [int(x) for x in s.split(",")],
+        default=[2048, 10240, 51200],
+        help="Comma-separated list of point counts to sample, e.g. 2048,10240,51200"
+    )
     parser.add_argument(
         "--jobs", type=int, default=cpu_count(),
         help="Number of parallel worker processes (default: CPU count)"
@@ -116,7 +110,7 @@ def main():
 
     os.environ['GOOGLE_CLOUD_PROJECT'] = args.project
 
-    # Build ZIP source list and determine category
+    # Build list of sources and determine category label
     if args.src_zip:
         zip_list = [args.src_zip]
         category = args.category_id or os.path.splitext(os.path.basename(args.src_zip))[0]
@@ -128,13 +122,7 @@ def main():
 
     # Process each ZIP
     for zs in zip_list:
-        process_zip(
-            zip_source=zs,
-            category=category,
-            densities=args.densities,
-            dst_bucket=args.dst_bucket,
-            jobs=args.jobs
-        )
+        process_zip(zs, category, args.densities, args.dst_bucket, args.jobs)
 
 if __name__ == '__main__':
     main()
