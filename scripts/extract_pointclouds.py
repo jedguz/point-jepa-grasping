@@ -1,29 +1,10 @@
-# File: scripts/extract_pointclouds.py
+#!/usr/bin/env python3
 """
-Script: extract_pointclouds.py
-Location: project root under `scripts/`
-
-Description:
-Downloads ShapeNet category ZIPs from GCS, unpacks all `.obj` meshes,
-samples point clouds at configured densities for each mesh *in parallel*,
-and stages all `.npz` locally; then uses one bulk `gsutil -m cp` to push
-everything to GCS in one shot per category.
-
-Output layout in bucket:
-  gs://<DST_BUCKET>/<category_id>/<mesh_id>/pc_<N>.npz
-
-Prerequisites:
-1. Create your bucket:
-   gcloud storage buckets create gs://adlr2025-pointclouds \
-     --project=adlr2025 --location=europe-west3 --storage-class=STANDARD
-2. VM scopes include storage access: `--scopes=https://www.googleapis.com/auth/cloud-platform`
-
-Usage:
-python scripts/extract_pointclouds.py \
-    --src_zip gs://shapenet_bucket/02747177.zip \
-    --dst_bucket adlr2025-pointclouds \
-    --densities 2048,10240,51200 \
-    --jobs 16
+Updated extract_pointclouds.py
+- Default densities to 2048,10240,25000
+- Silence Open3D INFO logs
+- Show progress with tqdm
+- Default parallel workers to half of CPUs
 """
 import argparse
 import os
@@ -33,7 +14,10 @@ import glob
 import numpy as np
 import open3d as o3d
 from multiprocessing import Pool, cpu_count
+from tqdm import tqdm
 
+# Silence verbose Open3D INFO messages
+o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Warning)
 
 def run(cmd):
     """Run a shell command, raising on failure."""
@@ -43,8 +27,7 @@ def run(cmd):
 
 def sample_mesh(mesh_file, densities, tmp_dir):
     """
-    Sample a single mesh at given densities.
-    Returns list of (local_output_path, mesh_id).
+    Sample a single mesh at given densities. Returns list of output file paths.
     """
     mesh_id = os.path.splitext(os.path.basename(mesh_file))[0]
     mesh = o3d.io.read_triangle_mesh(mesh_file)
@@ -60,50 +43,60 @@ def sample_mesh(mesh_file, densities, tmp_dir):
     return outputs
 
 
+def _sample_wrapper(args):
+    # top-level wrapper so Pool can pickle
+    return sample_mesh(*args)
+
+
 def process_category(zip_source, densities, dst_bucket, jobs):
-    """
-    Process one zip: download, extract, sample all meshes, and bulk upload.
-    """
     category_id = os.path.splitext(os.path.basename(zip_source))[0]
     with tempfile.TemporaryDirectory() as tmp:
-        # download and extract
+        # download and unpack
         archive = os.path.join(tmp, 'archive.zip')
         run(f"gsutil -q cp {zip_source} {archive}")
         run(f"unzip -q {archive} -d {tmp}")
-        # find all meshes
+
+        # find all .obj files
         mesh_files = glob.glob(os.path.join(tmp, '**', '*.obj'), recursive=True)
         if not mesh_files:
             raise RuntimeError(f"No .obj files found in {zip_source}")
-        # sample in parallel
+
         print(f"Sampling {len(mesh_files)} meshes in category {category_id} with {jobs} workers...")
+        args_list = [(mf, densities, tmp) for mf in mesh_files]
+
+        # parallel sample with progress bar
+        all_outputs = []
         with Pool(processes=jobs) as pool:
-            # prepare args for top‐level sample_mesh (which is picklable)
-            args_list = [(mf, densities, tmp) for mf in mesh_files]
-            all_outputs = pool.starmap(sample_mesh, args_list)
-        # bulk upload staging directory
-        staging_dir = tmp  # contains subdirs per mesh
+            for outputs in tqdm(pool.imap_unordered(_sample_wrapper, args_list), total=len(mesh_files)):
+                all_outputs.extend(outputs)
+
+        # upload everything at once
         dest = f"gs://{dst_bucket}/{category_id}/"
-        print(f"Uploading all sampled pointclouds for {category_id} to {dest}...")
-        run(f"gsutil -m cp -r {staging_dir}/* {dest}")
+        print(f"Uploading {len(all_outputs)} files for {category_id} to {dest}...")
+        run(f"gsutil -m cp -r {tmp}/* {dest}")
         print(f"Category {category_id} done.")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--src_zip', type=str,
-                       help='GCS URI of the category zip (e.g. gs://bucket/02747177.zip)')
-    parser.add_argument('--dst_bucket', type=str, required=True,
-                        help='Destination GCS bucket (just name, e.g. adlr2025-pointclouds)')
-    parser.add_argument('--densities', type=lambda s: [int(x) for x in s.split(',')],
-                        default=[2048,10240,51200],
-                        help='Comma-separated list of point counts')
-    parser.add_argument('--jobs', type=int, default=cpu_count(),
-                        help='Number of parallel workers (defaults to all CPUs)')
-
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description="Extract and sample point clouds from ShapeNet category ZIPs with progress and tuned defaults."
+    )
+    parser.add_argument(
+        '--src_zip', type=str, required=True,
+        help='GCS URI of the category zip (e.g. gs://bucket/02747177.zip)'
+    )
+    parser.add_argument(
+        '--dst_bucket', type=str, required=True,
+        help='Destination GCS bucket name (e.g. adlr2025-pointclouds)'
+    )
+    parser.add_argument(
+        '--densities', type=lambda s: [int(x) for x in s.split(',')],
+        default=[2048,10240,25000],
+        help='Comma-separated point counts (default: 2048,10240,25000)'
+    )
+    parser.add_argument(
+        '--jobs', type=int, default=max(1, cpu_count() // 2),
+        help='Number of parallel workers (default: half of available CPUs)'
+    )
     args = parser.parse_args()
     process_category(args.src_zip, args.densities, args.dst_bucket, args.jobs)
-
-
-if __name__ == '__main__':
-    main()
