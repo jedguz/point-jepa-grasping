@@ -77,11 +77,9 @@ def process_category(zip_source, densities, dst_bucket, jobs):
         # sample in parallel
         print(f"Sampling {len(mesh_files)} meshes in category {category_id} with {jobs} workers...")
         with Pool(processes=jobs) as pool:
-            # map each mesh_file to sample_mesh
-            all_outputs = pool.starmap(
-                lambda mf, dens, td: sample_mesh(mf, dens, td),
-                [(mf, densities, tmp) for mf in mesh_files]
-            )
+            # prepare args for top‐level sample_mesh (which is picklable)
+            args_list = [(mf, densities, tmp) for mf in mesh_files]
+            all_outputs = pool.starmap(sample_mesh, args_list)
         # bulk upload staging directory
         staging_dir = tmp  # contains subdirs per mesh
         dest = f"gs://{dst_bucket}/{category_id}/"
