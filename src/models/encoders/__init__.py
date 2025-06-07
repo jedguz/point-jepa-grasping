@@ -1,4 +1,4 @@
-from .jepa3d_wrapper import Encoder as JEPA3D
+from .jepa3d_wrapper import JEPA3DEncoderWrapper as JEPA3D
 
 ENCODERS = {
     'jepa3d': JEPA3D,
