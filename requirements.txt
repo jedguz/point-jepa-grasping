@@ -5,6 +5,7 @@ torch==2.2.1+cu121
 # core DL libs (will be pulled from the same index)
 torchvision
 torchaudio
+open3d
 
 # I/O & utilities
 iopath
