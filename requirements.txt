@@ -10,6 +10,15 @@ torchaudio
 iopath
 fvcore
 
+# additional packages that don't depend on torch
+addict
+timm
+
+# packages that need torch to be installed first
+spconv-cu121
+--find-links https://data.pyg.org/whl/torch-2.2.1+cu121.html
+torch-scatter
+
 # your local extensions (edit paths as needed)
 -e src/ext/jepa3d
 
