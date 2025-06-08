@@ -26,4 +26,4 @@ pointclouds/
 *.npz
 *.zip
 data/
-src/ext/point2vec/
+src/ext/point2vec
