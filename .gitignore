@@ -26,3 +26,4 @@ pointclouds/
 *.npz
 *.zip
 checkpoints/*.ckpt
+checkpoints/pre_point2vec-epoch.799-step.64800.ckpt
