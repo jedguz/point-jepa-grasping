@@ -25,5 +25,4 @@ pointclouds/
 *.npy
 *.npz
 *.zip
-data/
-src/ext/point2vec
+checkpoints/*.ckpt
