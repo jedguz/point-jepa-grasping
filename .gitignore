@@ -23,5 +23,6 @@ pointclouds/
 *.obj
 *.ply
 *.npy
+*.npz
 *.zip
 data/
