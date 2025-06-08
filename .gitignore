@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 # data
 # checkpoints
-*.pt
 wandb/
 src/ext/jepa3d/locate3d_data/dataset/*.json
 src/ext/jepa3d/locate3d_data/dataset/*.json
@@ -25,5 +24,4 @@ pointclouds/
 *.npy
 *.npz
 *.zip
-checkpoints/*.ckpt
 checkpoints/pre_point2vec-epoch.799-step.64800.ckpt
