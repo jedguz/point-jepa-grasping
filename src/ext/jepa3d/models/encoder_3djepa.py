@@ -98,6 +98,8 @@ class Encoder3DJEPA(
 
         zero_locs = features.abs().sum(dim=2) == 0
         zero_locs = zero_locs.unsqueeze(-1).repeat(1, 1, self.input_feat_dim)
+        print(f"[DEBUG] features.shape = {features.shape}")
+        print(f"[DEBUG] zero_token.shape = {self.zero_token.shape}")
         features = torch.where(zero_locs, self.zero_token, features)
 
         features = self.feat_norm(features)
