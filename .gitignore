@@ -20,8 +20,8 @@ shapenet_data/
 shapenet_extracted/
 pointclouds/
 *.obj
-*.ply
-*.npy
-*.npz
+#*.ply
+#*.npy
+#*.npz
 *.zip
 checkpoints/pre_point2vec-epoch.799-step.64800.ckpt
