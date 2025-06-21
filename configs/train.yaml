@@ -1,0 +1,33 @@
+# configs/train.yaml
+
+# ─── checkpoint settings ─────────────────────────────────────────────────
+ckpt:
+  bucket: adlr2025-pointclouds
+  filename: pretrain_pointjepa_epoch=499-step=40500.ckpt
+  local_dir: checkpoints
+  extra_epochs: 30
+
+# ─── data module ─────────────────────────────────────────────────────────
+data:
+  data_dir: ${hydra:runtime.cwd}/data/pointclouds
+  batch_size: 10
+  num_workers: 4
+
+# ─── model args ──────────────────────────────────────────────────────────
+model:
+  predictor_add_target_pos: true
+  num_targets_per_sample: 15
+
+# ─── trainer args ────────────────────────────────────────────────────────
+trainer:
+  default_root_dir: artifacts_npz_simple2
+  accelerator: gpu
+  devices: 1
+  precision: 16
+  log_every_n_steps: 5
+
+# ─── wandb logger ────────────────────────────────────────────────────────
+logger:
+  project: adlr
+  entity: ADLR2025
+  name: jepa_hydra_run

@@ -5,7 +5,7 @@ from pytorch3d.ops import ball_query, knn_gather, knn_points, sample_farthest_po
 from pytorch3d.ops.utils import masked_gather
 from torch import nn
 
-from pointjepa.modules.Pointnet import PointNetEncoder
+from modules.Pointnet import PointNetEncoder
 
 
 def fill_empty_indices(idx: torch.Tensor) -> torch.Tensor:

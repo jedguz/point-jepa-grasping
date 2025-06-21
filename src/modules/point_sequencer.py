@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from typing import List
-from pointjepa.modules.z_order import get_z_values
+from modules.z_order import get_z_values
 
 class PointSequencer:
     def __init__(self, method:str = "morton", device: str="cuda") -> None:

@@ -8,10 +8,10 @@ from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import Accuracy
 
-from pointjepa.modules.tokenizer import PointcloudTokenizer
-from pointjepa.modules.transformer import TransformerEncoder
-from pointjepa.utils import transforms
-from pointjepa.utils.checkpoint import extract_model_checkpoint
+from modules.tokenizer import PointcloudTokenizer
+from modules.transformer import TransformerEncoder
+from utils import transforms
+from utils.checkpoint import extract_model_checkpoint
 
 
 class PointJepaClassification(pl.LightningModule):

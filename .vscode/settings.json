@@ -1,5 +1,6 @@
 {
     "python.analysis.extraPaths": [
-        "./ext/jepa3d"
+        "./ext/jepa3d",
+        "./src"
     ]
 }

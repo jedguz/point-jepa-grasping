@@ -25,3 +25,27 @@ pointclouds/
 #*.npz
 *.zip
 checkpoints/pre_point2vec-epoch.799-step.64800.ckpt
+checkpoints/pretrain_pointjepa_epoch=499-step=40500.ckpt
+
+# Hydra & outputs
+/.hydra/
+/outputs/
+
+# Weights & Biases
+/wandb/
+/wandb-*
+
+# PyTorch Lightning
+/lightning_logs/
+/artifacts_npz_simple2/
+/checkpoints/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtualenv
+.venv/
+
+# Misc
+*.log

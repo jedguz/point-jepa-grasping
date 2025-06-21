@@ -10,18 +10,18 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.svm import SVC
 from torch.utils.data import DataLoader
 
-from pointjepa.modules.EMA import EMA
-from pointjepa.modules.context_sampler import ContextSampler
-from pointjepa.modules.masking import PointcloudMasking
-from pointjepa.modules.point_sequencer import PointSequencer
-from pointjepa.modules.target_sampler import TargetSampler
-from pointjepa.modules.tokenizer import PointcloudTokenizer
-from pointjepa.modules.transformer import (
+from modules.EMA import EMA
+from modules.context_sampler import ContextSampler
+from modules.masking import PointcloudMasking
+from modules.point_sequencer import PointSequencer
+from modules.target_sampler import TargetSampler
+from modules.tokenizer import PointcloudTokenizer
+from modules.transformer import (
     TransformerEncoder,
     TransformerEncoderOutput,
     TransformerPredictor,
 )
-from pointjepa.utils import transforms
+from utils import transforms
 
 
 class PointJepa(pl.LightningModule):
