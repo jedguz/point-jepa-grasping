@@ -11,6 +11,7 @@ from pytorch_lightning.loggers import WandbLogger
 from checkpoint_utils import fetch_checkpoint
 from models import PointJepa
 from callbacks.log_at_best_val import TrackLinearAccAtMinLossCallback
+from dlrhand2_datamodule import DLRHand2DataModule
 
 import hydra
 from omegaconf import DictConfig
@@ -64,10 +65,11 @@ def main(cfg: DictConfig):
 
     # ─── Instantiate model & datamodule ────────────────────────────────────
     model = PointJepa(**cfg.model)
-    dm = NPZDataModule(
-        data_dir=cfg.data.data_dir,
+    dm = DLRHand2DataModule(
+        root_dir=cfg.data.root_dir,      # set to 'data/grasp_sample/03948459' in config
         batch_size=cfg.data.batch_size,
         num_workers=cfg.data.num_workers,
+        num_points=cfg.data.num_points,
     )
 
     # ─── Callbacks ─────────────────────────────────────────────────────────

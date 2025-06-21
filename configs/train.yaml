@@ -9,9 +9,11 @@ ckpt:
 
 # ─── data module ─────────────────────────────────────────────────────────
 data:
-  data_dir: ${hydra:runtime.cwd}/data/pointclouds
-  batch_size: 10
-  num_workers: 4
+  loader: dlrhand2
+  root_dir: data/grasp_sample/03948459
+  batch_size: 4
+  num_workers: 0
+  num_points: 1024
 
 # ─── model args ──────────────────────────────────────────────────────────
 model:
