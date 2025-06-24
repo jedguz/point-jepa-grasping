@@ -20,47 +20,57 @@ def sample_mesh_as_pc(mesh_path: str, num_points: int = 2048) -> np.ndarray:
 
 class DLRHand2Dataset(Dataset):
     """
-    Finds any 'recording.npz' under root_dir (recursively), and expects alongside
-    each a mesh.obj file in the same folder.
-    Returns pointcloud and dummy score for testing.
+    Loads all grasps and scores from recording.npz files, with one mesh sample per file.
+    - recording.npz has 'grasps': (N,19), 'scores': (N,)
+    - Samples mesh only once per file and reuses for all grasps.
+    Returns (pc, grasp_vec, score).
     """
     def __init__(self, root_dir: str, num_points: int = 2048):
         super().__init__()
-        # Ensure we search from original project root when Hydra has changed CWD
-        base_dir = get_original_cwd()
-        self.root_dir = os.path.join(base_dir, root_dir)
-        pattern = os.path.join(self.root_dir, "**", "recording.npz")
-        self.files = sorted(glob.glob(pattern, recursive=True))
-        if not self.files:
-            raise FileNotFoundError(f"No recording.npz found under {self.root_dir}")
+        # Resolve project root if Hydra changed working dir
+        try:
+            base = get_original_cwd()
+        except (ValueError, NameError):
+            base = os.getcwd()
+        root = os.path.join(base, root_dir)
+        pattern = os.path.join(root, "**", "recording.npz")
+        files = sorted(glob.glob(pattern, recursive=True))
+        if not files:
+            raise FileNotFoundError(f"No recording.npz found under {root}")
         self.num_points = num_points
+        self.samples = []        # list of (file, grasp_idx)
+        self.pc_cache = {}       # map file -> sampled PC
+        for f in files:
+            data = np.load(f)
+            grasps = data['grasps']        # (N,19)
+            scores = data['scores']        # (N,)
+            # Pre-sample mesh once
+            mesh_file = os.path.join(os.path.dirname(f), 'mesh.obj')
+            pc = sample_mesh_as_pc(mesh_file, self.num_points)
+            self.pc_cache[f] = pc         # store (num_points,3)
+            N = grasps.shape[0]
+            for i in range(N):
+                self.samples.append((f, i))
 
     def __len__(self):
-        return len(self.files)
+        return len(self.samples)
 
     def __getitem__(self, idx: int):
-        npz_path = self.files[idx]
-        data = np.load(npz_path)
-        # The npz may already contain a pointcloud, else sample mesh
-        key = data.files[0]
-        pc = data[key].astype(np.float32)
-        if pc.ndim != 2 or pc.shape[1] != 3:
-            # fallback to sampling mesh
-            mesh_file = os.path.join(os.path.dirname(npz_path), 'mesh.obj')
-            pc = sample_mesh_as_pc(mesh_file, self.num_points)
-        else:
-            # optionally down-/up-sample to num_points
-            if pc.shape[0] != self.num_points:
-                idxs = np.random.choice(pc.shape[0], self.num_points,
-                                       replace=(pc.shape[0] < self.num_points))
-                pc = pc[idxs]
-        return torch.from_numpy(pc), torch.tensor(0.0)
+        f, gi = self.samples[idx]
+        data = np.load(f)
+        grasp_vec = data['grasps'][gi].astype(np.float32)
+        score = float(data['scores'][gi])
+        pc = self.pc_cache[f]        # reuse sampled PC
+        return (
+            torch.from_numpy(pc),               # (num_points,3)
+            torch.from_numpy(grasp_vec),        # (19,)
+            torch.tensor(score, dtype=torch.float32)
+        )
 
 class DLRHand2DataModule(pl.LightningDataModule):
     """
-    root_dir: base folder to search for recording.npz
-    num_points: points per cloud
-    batch_size, num_workers configurable
+    LightningDataModule for DLR-Hand-2 grasps: loads pointclouds + grasps + scores.
+    Configurable via Hydra: root_dir, batch_size, num_workers, num_points.
     """
     def __init__(
         self,
@@ -70,7 +80,6 @@ class DLRHand2DataModule(pl.LightningDataModule):
         num_points: int = 2048
     ):
         super().__init__()
-        # Store the relative path; actual resolution happens in Dataset
         self.root_dir = root_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
