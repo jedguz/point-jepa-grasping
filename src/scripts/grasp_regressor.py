@@ -20,6 +20,8 @@ import pytorch_lightning as pl
 from modules.tokenizer import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
 from scripts.pooling import get_pooling
+from torch.utils.data import DataLoader, TensorDataset
+
 
 class GraspRegressor(pl.LightningModule):
     # ------------------------------------------------------------------- init
@@ -90,6 +92,7 @@ class GraspRegressor(pl.LightningModule):
         mlp.append(nn.Linear(dims[-2], dims[-1]))
         self.head = nn.Sequential(*mlp)
 
+
     # ---------------------------------------------------------------- forward
     @torch.cuda.amp.autocast(enabled=True)
     def forward(self, points: torch.Tensor, grasp_vec: torch.Tensor) -> torch.Tensor:
@@ -110,4 +113,36 @@ class GraspRegressor(pl.LightningModule):
         obj_emb = self.pool(feats)                        # (B, D)
 
         combined = torch.cat([obj_emb, grasp_vec], dim=-1)       # (B, D+19)
-        return self.head(combined)                        # (
+        return self.head(combined)                        # (B, 1)
+    
+    # ------------------------------------------------------------------- training
+    def training_step(self, batch, batch_idx):
+        points, grasp_vec, score = batch
+        pred = self(points, grasp_vec).squeeze(-1)
+        loss = F.mse_loss(pred, score)
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        points, grasp_vec, score = batch
+        pred = self(points, grasp_vec).squeeze(-1)
+        loss = F.mse_loss(pred, score)
+        self.log("val_loss", loss, prog_bar=True)
+
+    def configure_optimizers(self):
+        # freeze backbone if lr_backbone == 0
+        backbone_params, head_params = [], []
+        if self.hparams.lr_backbone > 0:
+            backbone_params = [
+                {"params": self.tokenizer.parameters(),          "lr": self.hparams.lr_backbone},
+                {"params": self.positional_encoding.parameters(),"lr": self.hparams.lr_backbone},
+                {"params": self.encoder.parameters(),            "lr": self.hparams.lr_backbone},
+            ]
+        head_params = {"params": self.head.parameters(), "lr": self.hparams.lr_head}
+
+        optimizer = torch.optim.AdamW(backbone_params + [head_params],
+                                    weight_decay=self.hparams.weight_decay)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=self.trainer.max_epochs
+        )
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}

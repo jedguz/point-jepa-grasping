@@ -1,3 +1,12 @@
+# tests/conftest.py
+import sys
+from pathlib import Path
+
+# ── make `scripts.*` importable for every test run ───────────────────────
+ROOT = Path(__file__).resolve().parents[1]   # → .../ADLR
+if str(ROOT) not in sys.path:                # avoid duplicates
+    sys.path.insert(0, str(ROOT))
+
 import numpy as np
 import pytest
 import torch
