@@ -23,8 +23,9 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 
 from checkpoint_utils import fetch_checkpoint
-from scripts.dlrhand2_datamodule import DLRHand2DataModule
-from scripts.grasp_regressor import GraspRegressor
+from dlrhand2_datamodule import DLRHand2DataModule
+from grasp_regressor import GraspRegressor
+from load_backbone   import load_pretrained_backbone
 
 
 @hydra.main(config_path="../configs", config_name="train")
@@ -82,6 +83,16 @@ def main(cfg: DictConfig) -> None:  # pragma: no cover
         lr_backbone=cfg.model.lr_backbone,
         lr_head=cfg.model.lr_head,
     )
+
+    # ── Load ShapeNet-pre-trained backbone ───────────────────────────────
+    if cfg.ckpt.get("backbone_filename"):
+        local_backbone = os.path.join(
+            cfg.ckpt.local_dir, cfg.ckpt.backbone_filename
+        )
+        backbone_ckpt = fetch_checkpoint(
+            cfg.ckpt.bucket, cfg.ckpt.backbone_filename, local_backbone
+        )
+        load_pretrained_backbone(model, backbone_ckpt)
 
     # ── callbacks
     callbacks = [LearningRateMonitor(logging_interval="epoch")]

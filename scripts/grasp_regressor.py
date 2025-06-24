@@ -21,7 +21,6 @@ from modules.tokenizer import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
 from scripts.pooling import get_pooling
 
-
 class GraspRegressor(pl.LightningModule):
     # ------------------------------------------------------------------- init
     def __init__(
