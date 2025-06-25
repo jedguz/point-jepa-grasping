@@ -16,6 +16,7 @@ the shuffling flag differs.  Add an explicit split if/when you have one.
 from __future__ import annotations
 
 import glob
+import shutil
 import os
 from typing import Dict, List, Tuple
 
@@ -128,19 +129,48 @@ class DLRHand2DataModule(pl.LightningDataModule):
         batch_size: int = 4,
         num_workers: int = 0,
         num_points: int = 2048,
+        ssd_cache_dir: str = "/mnt/disks/ssd/dataset",
+        use_ssd_cache: bool = True,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
-
         self.dataset: DLRHand2Dataset | None = None
 
     # ------------------------------------------------------------------- setup
     def setup(self, stage: str | None = None) -> None:  # noqa: D401
         """Instantiate the underlying Dataset exactly once per rank."""
         if self.dataset is None:
+            if self.hparams.use_ssd_cache:
+                dataset_path = self.prepare_ssd_cache()
+            else:
+                dataset_path = self.hparams.root_dir
+
             self.dataset = DLRHand2Dataset(
-                root_dir=self.hparams.root_dir, num_points=self.hparams.num_points
+                root_dir=dataset_path,
+                num_points=self.hparams.num_points,
             )
+    
+    def prepare_ssd_cache(self) -> str:
+        src_root = os.path.join(get_original_cwd(), self.hparams.root_dir)
+        dst_root = self.hparams.ssd_cache_dir
+
+        if not os.path.exists(dst_root):
+            os.makedirs(dst_root, exist_ok=True)
+
+        # Only copy .npz and mesh files — optionally, you can limit to a subset
+        for src_file in glob.glob(os.path.join(src_root, "**", "*.*"), recursive=True):
+            # if not src_file.endswith((".npz")):
+            if not src_file.endswith((".npz", ".obj")):
+                continue
+            rel_path = os.path.relpath(src_file, src_root)
+            dst_file = os.path.join(dst_root, rel_path)
+
+            if not os.path.exists(dst_file):
+                os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+                shutil.copy2(src_file, dst_file)
+
+        return dst_root
+
 
     # ---------------------------------------------------------------- loaders
     def train_dataloader(self) -> DataLoader:

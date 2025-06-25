@@ -19,6 +19,8 @@ data:
   batch_size: 4                      # adjust when you move to GPU + SSD
   num_workers: 0
   num_points: 1024                  # must match pre-train if you load backbone
+  ssd_dir: "/mnt/disks/ssd/dataset"
+  use_ssd: True
 
 # ─── model hyper-params ────────────────────────────────────
 model:
