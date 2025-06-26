@@ -47,11 +47,10 @@ def main(cfg: DictConfig) -> None:
     # ── data --------------------------------------------------------------------------
     dm = DLRHand2DataModule(
         root_dir   = cfg.data.root_dir,
+        ssd_cache_dir = cfg.data.ssd_cache_dir,
         batch_size = cfg.data.batch_size,
         num_workers= cfg.data.num_workers,
-        num_points = cfg.data.num_points,
-        ssd_cache_dir = cfg.data.ssd_dir,
-        use_ssd_cache = cfg.data.use_ssd,
+        num_points = cfg.data.num_points
     )
 
     # ── model -------------------------------------------------------------------------

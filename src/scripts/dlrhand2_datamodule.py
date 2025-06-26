@@ -1,178 +1,125 @@
-# scripts/dlrhand2_datamodule.py
 """
 Lightning DataModule and PyTorch Dataset for DLR-Hand-2 grasp recordings.
-
-Main improvements over the previous version
--------------------------------------------
-1. **`data_cache`** – keeps every `recording.npz` in memory after first load,
-   eliminating repeated disk I/O inside `__getitem__`.
-2. **Deterministic validation / test loaders** – they no longer reuse the
-   shuffling train loader.
-3. Nit: small refactor around `pin_memory`.
-
-The module still uses the *same* underlying dataset for train/val/test; only
-the shuffling flag differs.  Add an explicit split if/when you have one.
+Optimized for SSD-backed batch-by-batch loading.
 """
-from __future__ import annotations
 
-import glob
-import shutil
+from __future__ import annotations
 import os
-from typing import Dict, List, Tuple
+import glob
+from typing import List, Tuple
 
 import numpy as np
-import pytorch_lightning as pl
 import torch
+import pytorch_lightning as pl
+from torch.utils.data import Dataset, DataLoader
 from hydra.utils import get_original_cwd
-from torch.utils.data import DataLoader, Dataset
 import trimesh
-
+import shutil
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Helper
 # ────────────────────────────────────────────────────────────────────────────────
-def sample_mesh_as_pc(mesh_path: str, num_points: int = 2_048) -> np.ndarray:
-    """
-    Load a mesh and sample `num_points` points uniformly from its surface.
-
-    If the mesh is not watertight we fall back to its convex hull to avoid
-    strange behaviour in trimesh’s sampling routine.
-    """
+def sample_mesh_as_pc(mesh_path: str, num_points: int = 2048) -> np.ndarray:
     mesh = trimesh.load(mesh_path, process=False)
     if not mesh.is_watertight:
         mesh = mesh.convex_hull
     pts, _ = mesh.sample(num_points, return_index=True)
     return pts.astype(np.float32)
 
-
 # ────────────────────────────────────────────────────────────────────────────────
 # Dataset
 # ────────────────────────────────────────────────────────────────────────────────
 class DLRHand2Dataset(Dataset):
-    """
-    Each item returns `(point_cloud, grasp_vec, score)`:
-
-    * **point_cloud** – (N, 3) float32
-    * **grasp_vec**   – (19,)  float32
-    * **score**       – ()     float32 scalar
-    """
-
-    def __init__(self, root_dir: str, num_points: int = 2048) -> None:
+    def __init__(self, root_dir: str, num_points: int = 2048, ssd_cache_dir: str = "/mnt/disks/ssd/cache") -> None:
         super().__init__()
-
-        # Resolve original working directory when running under Hydra
-        try:
-            base = get_original_cwd()
-        except (ValueError, NameError):
-            base = os.getcwd()
-        root = os.path.join(base, root_dir)
-
-        pattern = os.path.join(root, "**", "recording.npz")
-        self.recording_files: List[str] = sorted(glob.glob(pattern, recursive=True))
-        if not self.recording_files:
-            raise FileNotFoundError(f"No recording.npz found under {root}")
-
+        self.source_root = os.path.abspath(root_dir)
+        self.ssd_cache_root = os.path.abspath(ssd_cache_dir)
+        os.makedirs(self.ssd_cache_root, exist_ok=True)
         self.num_points = num_points
-        self.samples: List[Tuple[str, int]] = []  # (file_path, grasp_idx)
 
-        # Caches ── one copy per Python process
-        self.pc_cache: Dict[str, np.ndarray] = {}    # file_path -> (P, 3)
-        self.data_cache: Dict[str, np.lib.npyio.NpzFile] = {}  # file_path -> npz
+        # Collect all files
+        pattern = os.path.join(self.source_root, "**", "recording.npz")
+        self.recording_files = sorted(glob.glob(pattern, recursive=True))
+        if not self.recording_files:
+            raise FileNotFoundError(f"No recordings found under {self.source_root}")
 
-        # Build index table + pre-sample each mesh once
+        self.samples: List[Tuple[str, int]] = []
+        self.pc_cache = {}
+        self.data_cache = {}
+
         for f in self.recording_files:
-            data = np.load(f)  # only once here
-            num_grasps = int(data["grasps"].shape[0])
-
-            mesh_path = os.path.join(os.path.dirname(f), "mesh.obj")
-            self.pc_cache[f] = sample_mesh_as_pc(mesh_path, num_points)
-
+            num_grasps = int(np.load(f)["grasps"].shape[0])
             for gi in range(num_grasps):
                 self.samples.append((f, gi))
 
-    # --------------------------------------------------------------------- magic
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int):
         file_path, grasp_idx = self.samples[idx]
 
-        # Memory-cache the npz
-        if file_path not in self.data_cache:
-            self.data_cache[file_path] = np.load(file_path)
+        # Cache recording file + mesh.obj to SSD
+        cached_npz = self._ensure_cached(file_path)
+        mesh_path = os.path.join(os.path.dirname(file_path), "mesh.obj")
+        cached_mesh = self._ensure_cached(mesh_path)
 
-        data = self.data_cache[file_path]
-        grasp_vec = data["grasps"][grasp_idx].astype(np.float32)  # (19,)
-        score = float(data["scores"][grasp_idx])                  # scalar
-        pc = self.pc_cache[file_path]                             # (P, 3)
+        # Load into memory
+        if cached_npz not in self.data_cache:
+            self.data_cache[cached_npz] = np.load(cached_npz)
+        data = self.data_cache[cached_npz]
+
+        if cached_npz not in self.pc_cache:
+            self.pc_cache[cached_npz] = sample_mesh_as_pc(cached_mesh, self.num_points)
+
+        pc = self.pc_cache[cached_npz]
+        grasp_vec = data["grasps"][grasp_idx].astype(np.float32)
+        score = float(data["scores"][grasp_idx])
 
         return (
-            torch.from_numpy(pc),             # (P, 3)
-            torch.from_numpy(grasp_vec),      # (19,)
+            torch.from_numpy(pc),
+            torch.from_numpy(grasp_vec),
             torch.tensor(score, dtype=torch.float32),
         )
 
+    def _ensure_cached(self, src_path: str) -> str:
+        # Relativize to source root and mirror in SSD
+        rel_path = os.path.relpath(src_path, self.source_root)
+        dst_path = os.path.join(self.ssd_cache_root, rel_path)
+        if not os.path.exists(dst_path):
+            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+            shutil.copy2(src_path, dst_path)
+        return dst_path
 
 # ────────────────────────────────────────────────────────────────────────────────
 # DataModule
 # ────────────────────────────────────────────────────────────────────────────────
 class DLRHand2DataModule(pl.LightningDataModule):
     """
-    *All* loaders currently share the same dataset object; only the shuffling
-    flag changes.  Pass `num_workers > 0` with care – every worker gets its own
-    copy of the two RAM caches.
+    SSD-optimized Lightning DataModule for DLR-Hand-2 dataset.
+    Does not preload into RAM — all samples loaded from disk per batch.
     """
 
     def __init__(
         self,
-        root_dir: str = "data/grasp_sample/03948459",
-        batch_size: int = 4,
-        num_workers: int = 0,
-        num_points: int = 2048,
+        root_dir: str = "data/grasp_sample/03948459/",
         ssd_cache_dir: str = "/mnt/disks/ssd/dataset",
-        use_ssd_cache: bool = True,
+        batch_size: int = 8,
+        num_workers: int = 2,
+        num_points: int = 2048,
     ) -> None:
         super().__init__()
         self.save_hyperparameters()
         self.dataset: DLRHand2Dataset | None = None
 
-    # ------------------------------------------------------------------- setup
-    def setup(self, stage: str | None = None) -> None:  # noqa: D401
-        """Instantiate the underlying Dataset exactly once per rank."""
+    def setup(self, stage: str | None = None) -> None:
         if self.dataset is None:
-            if self.hparams.use_ssd_cache:
-                dataset_path = self.prepare_ssd_cache()
-            else:
-                dataset_path = self.hparams.root_dir
-
+            dataset_root = os.path.join(get_original_cwd(), self.hparams.root_dir)
             self.dataset = DLRHand2Dataset(
-                root_dir=dataset_path,
+                root_dir=dataset_root,
                 num_points=self.hparams.num_points,
+                ssd_cache_dir="/mnt/disks/ssd/cache"
             )
-    
-    def prepare_ssd_cache(self) -> str:
-        src_root = os.path.join(get_original_cwd(), self.hparams.root_dir)
-        dst_root = self.hparams.ssd_cache_dir
 
-        if not os.path.exists(dst_root):
-            os.makedirs(dst_root, exist_ok=True)
-
-        # Only copy .npz and mesh files — optionally, you can limit to a subset
-        for src_file in glob.glob(os.path.join(src_root, "**", "*.*"), recursive=True):
-            # if not src_file.endswith((".npz")):
-            if not src_file.endswith((".npz", ".obj")):
-                continue
-            rel_path = os.path.relpath(src_file, src_root)
-            dst_file = os.path.join(dst_root, rel_path)
-
-            if not os.path.exists(dst_file):
-                os.makedirs(os.path.dirname(dst_file), exist_ok=True)
-                shutil.copy2(src_file, dst_file)
-
-        return dst_root
-
-
-    # ---------------------------------------------------------------- loaders
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.dataset,
@@ -186,11 +133,10 @@ class DLRHand2DataModule(pl.LightningDataModule):
         return DataLoader(
             self.dataset,
             batch_size=self.hparams.batch_size,
-            shuffle=False,                     # deterministic!
+            shuffle=False,
             num_workers=self.hparams.num_workers,
             pin_memory=torch.cuda.is_available(),
         )
 
     def test_dataloader(self) -> DataLoader:
-        # Uses the same deterministic loader as validation for now
         return self.val_dataloader()
