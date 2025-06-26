@@ -12,8 +12,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers   import WandbLogger
 
 from scripts.checkpoint_utils     import fetch_checkpoint
-from scripts.dlrhand2_datamodule  import DLRHand2DataModule
-from scripts.grasp_regressor      import GraspRegressor
+from scripts.dlrhand2_score_datamodule  import DLRHand2DataModule
+from scripts.score_regressor      import GraspRegressor
 from scripts.load_backbone        import load_pretrained_backbone
 
 

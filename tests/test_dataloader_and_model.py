@@ -1,7 +1,7 @@
 import torch
 
-from scripts.dlrhand2_datamodule import DLRHand2DataModule
-from scripts.grasp_regressor import GraspRegressor
+from scripts.dlrhand2_score_datamodule import DLRHand2DataModule
+from scripts.score_regressor import GraspRegressor
 
 
 def test_forward_backward(tmp_dataset):

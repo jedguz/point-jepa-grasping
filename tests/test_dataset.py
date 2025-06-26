@@ -1,6 +1,6 @@
 import torch
 
-from scripts.dlrhand2_datamodule import DLRHand2Dataset
+from scripts.dlrhand2_score_datamodule import DLRHand2Dataset
 
 
 def test_dataset_shapes(tmp_dataset):
