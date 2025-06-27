@@ -2,8 +2,10 @@
 import os
 import warnings
 import torch
+import torch.nn as nn
 import collections
-from scripts.joint_regressor           import JointRegressor
+from scripts.joint_regressor import JointRegressor
+from utils.checkpoint import extract_model_checkpoint 
 
 def fetch_checkpoint(bucket_name: str, blob_name: str, dest_path: str) -> str:
     """
@@ -30,38 +32,32 @@ def fetch_checkpoint(bucket_name: str, blob_name: str, dest_path: str) -> str:
         warnings.warn(f"Failed to download checkpoint ({e}); assuming it's already present")
     return dest_path
 
-def load_full_checkpoint(model, ckpt_path: str):
-    """
-    Loads the full checkpoint into the model with shape validation.
-    Skips keys with mismatched shapes and logs all important stats.
-    """
-    print(f"📂 Loading full checkpoint from: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location="cpu")
-    state = ckpt.get("state_dict", ckpt)
+def load_full_checkpoint(model: JointRegressor, path: str) -> None:
+    print(f"Loading pretrained checkpoint from '{path}'.")
 
-    model_state = model.state_dict()
-    loadable = {}
-    skipped = []
+    checkpoint = extract_model_checkpoint(path)
 
-    for k, v in state.items():
-        if k in model_state and model_state[k].shape == v.shape:
-            loadable[k] = v
-        else:
-            model_shape = model_state.get(k, torch.tensor([])).shape
-            skipped.append((k, v.shape, model_shape))
+    for k in list(checkpoint.keys()):
+        if k.startswith("cls_head."):
+            del checkpoint[k]
+        elif k.startswith("head."):
+            del checkpoint[k]
+        elif k.startswith("predictor."):
+            del checkpoint[k]
 
-    # Load valid weights only
-    missing, unexpected = model.load_state_dict(loadable, strict=False)
+    missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)  # type: ignore
+    print(f"Missing keys: {missing_keys}")
+    print(f"Unexpected keys: {unexpected_keys}")
 
-    print(f"\n✅ Loaded {len(loadable)} tensors into model.")
-    print(f"❌ Missing keys in model: {len(missing)}")
-    print(f"⚠️ Unexpected keys in checkpoint: {len(unexpected)}")
+    # fix NaNs in batchnorm, this has been observed in some checkpoints... not sure why
+    for name, m in model.named_modules():
+        if isinstance(m, nn.BatchNorm1d):
+            if torch.any(torch.isnan(m.running_mean)):  # type: ignore
+                print(f"Warning: NaNs in running_mean of {name}. Setting to zeros.")
+                m.running_mean = torch.zeros_like(m.running_mean)  # type: ignore
+            if torch.any(torch.isnan(m.running_var)):  # type: ignore
+                print(f"Warning: NaNs in running_var of {name}. Setting to ones.")
+                m.running_var = torch.ones_like(m.running_var)  # type: ignore
 
-    if skipped:
-        print(f"\n🚫 Skipped {len(skipped)} keys due to shape mismatch:")
-        for k, v_shape, m_shape in skipped:
-            print(f"   - {k}: ckpt={tuple(v_shape)}, model={tuple(m_shape)}")
 
-    if not missing and not skipped:
-        print("\n🎉 All checkpoint parameters successfully loaded!")
 

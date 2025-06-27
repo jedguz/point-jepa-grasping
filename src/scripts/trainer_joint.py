@@ -10,7 +10,7 @@ from pytorch_lightning.loggers   import WandbLogger
 from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
 from scripts.joint_regressor           import JointRegressor
 from scripts.checkpoint_utils          import fetch_checkpoint
-from scripts.checkpoint_utils          import load_pretrained_backbone
+from scripts.checkpoint_utils          import load_full_checkpoint
 
 
 @hydra.main(config_path="../../configs", config_name="train_joint")
@@ -55,6 +55,7 @@ def main(cfg: DictConfig) -> None:
         encoder_dropout      = cfg.model.encoder_dropout,
         encoder_attn_dropout = cfg.model.encoder_attn_dropout,
         encoder_drop_path_rate=cfg.model.encoder_drop_path_rate,
+        encoder_mlp_ratio    = cfg.model.encoder_mlp_ratio,
         pooling_type         = cfg.model.pooling_type,
         pooling_heads        = cfg.model.pooling_heads,
         head_hidden_dims     = cfg.model.head_hidden_dims,
@@ -66,7 +67,7 @@ def main(cfg: DictConfig) -> None:
     if cfg.ckpt.get("backbone_filename"):
         bb_local = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.backbone_filename)
         bb_ckpt  = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.backbone_filename, bb_local)
-        load_pretrained_backbone(model, bb_ckpt)
+        load_full_checkpoint(model, bb_ckpt)
 
     # ─ trainer ───────────────────────────────────────────────────────────────
     trainer = pl.Trainer(

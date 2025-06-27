@@ -8,7 +8,7 @@ ckpt:
   filename: ""
   bucket: adlr2025-pointclouds       # GCS bucket
   local_dir: checkpoints             # local cache dir
-  extra_epochs: 10                   # added to epochs parsed from filename
+  extra_epochs: 20                   # added to epochs parsed from filename
   backbone_filename: pretrain_pointjepa_epoch=499-step=40500.ckpt  # remove for training from scratch
 
 # ─── data module ────────────────────────────────────────────
@@ -27,11 +27,12 @@ model:
   tokenizer_radius:      0.05
 
   encoder_dim:           384 # this is fixed by the backbone
-  encoder_depth:         8
+  encoder_depth:         12
   encoder_heads:         8
   encoder_dropout:       0.1
   encoder_attn_dropout:  0.1
   encoder_drop_path_rate: 0.1
+  encoder_mlp_ratio:     4
 
   pooling_type:          mean
   pooling_heads:         4

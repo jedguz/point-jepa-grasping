@@ -8,6 +8,7 @@ from __future__ import annotations
 import torch, torch.nn as nn, torch.nn.functional as F, pytorch_lightning as pl
 from modules.tokenizer   import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
+from modules.transformer import TransformerPredictor
 from scripts.pooling     import get_pooling
 
 
@@ -26,6 +27,7 @@ class JointRegressor(pl.LightningModule):
         encoder_dropout: float,
         encoder_attn_dropout: float,
         encoder_drop_path_rate: float,
+        encoder_mlp_ratio: float,
         pooling_type: str,
         pooling_heads: int,
         head_hidden_dims: list[int],
@@ -56,6 +58,8 @@ class JointRegressor(pl.LightningModule):
             embed_dim      = encoder_dim,
             depth          = encoder_depth,
             num_heads      = encoder_heads,
+            mlp_ratio      = encoder_mlp_ratio,
+            qkv_bias       = True,
             drop_rate      = encoder_dropout,
             attn_drop_rate = encoder_attn_dropout,
             drop_path_rate = dpr,
@@ -107,7 +111,7 @@ class JointRegressor(pl.LightningModule):
             bb_params = [
                 {"params": self.tokenizer.parameters(),           "lr": self.hparams.lr_backbone},
                 {"params": self.positional_encoding.parameters(), "lr": self.hparams.lr_backbone},
-                {"params": self.encoder.parameters(),             "lr": self.hparams.lr_backbone},
+                {"params": self.encoder.parameters(),             "lr": self.hparams.lr_backbone}
             ]
         head_params = {"params": self.head.parameters(), "lr": self.hparams.lr_head}
 
