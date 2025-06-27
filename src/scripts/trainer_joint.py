@@ -10,7 +10,7 @@ from pytorch_lightning.loggers   import WandbLogger
 from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
 from scripts.joint_regressor           import JointRegressor
 from scripts.checkpoint_utils          import fetch_checkpoint
-from scripts.load_backbone             import load_pretrained_backbone
+from scripts.checkpoint_utils          import load_pretrained_backbone
 
 
 @hydra.main(config_path="../../configs", config_name="train_joint")
