@@ -30,43 +30,38 @@ def fetch_checkpoint(bucket_name: str, blob_name: str, dest_path: str) -> str:
         warnings.warn(f"Failed to download checkpoint ({e}); assuming it's already present")
     return dest_path
 
-def load_pretrained_backbone(model: JointRegressor, ckpt_path: str):
+def load_full_checkpoint(model, ckpt_path: str):
     """
-    Load tokenizer, positional encoding, encoder, and pool weights from a checkpoint.
-    Verifies that all expected keys were loaded and prints mismatches.
+    Loads the full checkpoint into the model with shape validation.
+    Skips keys with mismatched shapes and logs all important stats.
     """
-    print(f"📂 Loading checkpoint from: {ckpt_path}")
+    print(f"📂 Loading full checkpoint from: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu")
     state = ckpt.get("state_dict", ckpt)
 
-    prefixes = ("tokenizer.", "positional_encoding.", "encoder.", "pool.")
     model_state = model.state_dict()
     loadable = {}
-    expected_keys = []
+    skipped = []
 
     for k, v in state.items():
-        if k.startswith(prefixes):
-            expected_keys.append(k)
-            if k in model_state and model_state[k].shape == v.shape:
-                loadable[k] = v
-            else:
-                print(f"⚠️ Skipping {k}: shape mismatch "
-                      f"(ckpt={tuple(v.shape)}, model={tuple(model_state.get(k, torch.tensor([])).shape)})")
+        if k in model_state and model_state[k].shape == v.shape:
+            loadable[k] = v
+        else:
+            model_shape = model_state.get(k, torch.tensor([])).shape
+            skipped.append((k, v.shape, model_shape))
 
-    # Load the filtered state dict
+    # Load valid weights only
     missing, unexpected = model.load_state_dict(loadable, strict=False)
 
-    print(f"\n✅ Loaded {len(loadable)} tensors.")
-    print(f"❌ Missing keys after load: {len(missing)}")
-    print(f"⚠️ Unexpected keys: {len(unexpected)}")
+    print(f"\n✅ Loaded {len(loadable)} tensors into model.")
+    print(f"❌ Missing keys in model: {len(missing)}")
+    print(f"⚠️ Unexpected keys in checkpoint: {len(unexpected)}")
 
-    # Extra verification: check if all expected keys were loaded
-    missing_from_ckpt = [k for k in expected_keys if k not in loadable]
-    if missing_from_ckpt:
-        print(f"\n🚨 WARNING: {len(missing_from_ckpt)} expected keys not loaded due to mismatches:")
-        for k in missing_from_ckpt:
-            print(f"   - {k}")
-    else:
-        print("\n✅ All expected keys loaded successfully.")
+    if skipped:
+        print(f"\n🚫 Skipped {len(skipped)} keys due to shape mismatch:")
+        for k, v_shape, m_shape in skipped:
+            print(f"   - {k}: ckpt={tuple(v_shape)}, model={tuple(m_shape)}")
 
+    if not missing and not skipped:
+        print("\n🎉 All checkpoint parameters successfully loaded!")
 
