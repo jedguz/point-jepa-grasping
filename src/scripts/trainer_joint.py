@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers   import WandbLogger
 
-from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
+from scripts.dlrhand2_joint_datamodule_new import DLRHand2JointDataModule
 from scripts.joint_regressor           import JointRegressor
 from scripts.checkpoint_utils          import fetch_checkpoint
 from scripts.checkpoint_utils          import load_full_checkpoint
@@ -43,6 +43,8 @@ def main(cfg: DictConfig) -> None:
         num_workers   = cfg.data.num_workers,
         num_points    = cfg.data.num_points,
         min_score     = cfg.data.get("min_score", None),
+        top_percentile = 1.0,  
+        sort_by_score = True
     )
 
     # ─ model ─────────────────────────────────────────────────────────────────

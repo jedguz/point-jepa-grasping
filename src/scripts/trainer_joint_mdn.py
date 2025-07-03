@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers   import WandbLogger
 
-from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
+from scripts.dlrhand2_joint_datamodule_new import DLRHand2JointDataModule
 from scripts.joint_regressor_mdn       import JointRegressorMDN          # ← NEW
 from scripts.checkpoint_utils          import fetch_checkpoint, load_full_checkpoint
 from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
