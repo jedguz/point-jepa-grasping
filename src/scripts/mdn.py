@@ -1,26 +1,21 @@
 # ──────────────────────────────────────────────────────────────
-# scripts/mdn.py
-# Utilities for a Mixture-Density Network (MDN) head.
+# scripts/mdn.py  
 # ──────────────────────────────────────────────────────────────
 from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import (
-    Normal,
-    Categorical,
-    MixtureSameFamily,
-    Independent,          # ← NEW: wrap to treat last dim as event
-)
 
-# --------------------------------------------------------------------- head
+# ------------------------------------------------------------------ head
 class MDNHead(nn.Module):
     """
-    Maps a feature vector h → parameters of a diagonal-covariance GMM.
-    Outputs:
-        π  : (B, K)        mixing probabilities
-        μ  : (B, K, D)     component means
-        σ  : (B, K, D)     component std-devs (positive)
+    Feature h  →  diagonal-covariance GMM parameters.
+
+    Returns
+    -------
+    log_pi : (B,K)         log-mixing weights  (stable for log-sum-exp)
+    mu     : (B,K,D)       means
+    sigma  : (B,K,D)       std-devs  (σ ≥ var_min)
     """
     def __init__(
         self,
@@ -28,10 +23,12 @@ class MDNHead(nn.Module):
         out_dim: int,
         num_mixtures: int = 5,
         hidden: int | None = None,
+        var_min: float = 1e-3,           # ← variance floor
     ):
         super().__init__()
         self.K = num_mixtures
         self.D = out_dim
+        self.var_min = var_min
         hid = hidden or 2 * in_dim
 
         self.net = nn.Sequential(
@@ -39,42 +36,33 @@ class MDNHead(nn.Module):
             nn.Linear(hid, (2 * out_dim + 1) * num_mixtures),
         )
 
-    # --------------------------------------------------------- forward
+    # ---------------------------------------------------------- forward
     def forward(self, x: torch.Tensor):
-        """
-        Returns π (B,K), μ (B,K,D), σ (B,K,D)
-        """
         b = x.size(0)
         raw = self.net(x).view(b, self.K, 1 + 2 * self.D)
 
-        logit_pi   = raw[..., 0]                  # (B,K)
-        mu         = raw[..., 1 : 1 + self.D]     # (B,K,D)
-        log_sigma  = raw[..., 1 + self.D :]       # (B,K,D)
+        logit_pi  = raw[..., 0]                           # (B,K)
+        mu        = raw[..., 1 : 1 + self.D]              # (B,K,D)
+        log_sigma = raw[..., 1 + self.D :]                # (B,K,D)
 
-        pi    = F.softmax(logit_pi, dim=-1)
-        sigma = F.softplus(log_sigma) + 1e-6      # avoid zero
+        log_pi = F.log_softmax(logit_pi, dim=-1)          # stable logs
+        sigma  = F.softplus(log_sigma) + self.var_min     # σ ≥ var_min
+        return log_pi, mu, sigma
 
-        return pi, mu, sigma
 
-
-# --------------------------------------------------------------------- loss
-def mdn_nll(pi: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor, y: torch.Tensor):
+# ------------------------------------------------------------------ NLL
+def mdn_nll(
+    log_pi: torch.Tensor,        # (B,K)
+    mu:     torch.Tensor,        # (B,K,D)
+    sigma:  torch.Tensor,        # (B,K,D)
+    y:      torch.Tensor,        # (B,D)
+) -> torch.Tensor:
     """
-    Negative log-likelihood of targets y under the predicted mixture.
-
-    Args
-    ----
-    pi, mu, sigma : outputs from MDNHead
-    y             : (B, D)  ground-truth vectors
-
-    Returns
-    -------
-    Scalar mean NLL.
+    Exact negative log-likelihood of targets under the predicted mixture.
+    Diagonal Gaussians, computed in log-space for stability.
     """
-    # Treat the final dimension (D) as the *event* dimension
-    components = Independent(Normal(loc=mu, scale=sigma), 1)   # batch = (B,K)
-    mixture    = Categorical(probs=pi)                         # batch = (B,)
-    gmm        = MixtureSameFamily(mixture, components)
-
-    nll = -gmm.log_prob(y.unsqueeze(1))    # (B,)  after broadcasting
+    y     = y.unsqueeze(1)                       # (B,1,D) → broadcast
+    var   = sigma.pow(2)
+    log_prob = -0.5 * (((y - mu) ** 2) / var + torch.log(2 * torch.pi * var)).sum(-1)  # (B,K)
+    nll = -torch.logsumexp(log_pi + log_prob, dim=1)    # (B,)
     return nll.mean()

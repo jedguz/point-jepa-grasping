@@ -4,4 +4,7 @@ defaults:
   - _self_
 
 model:
-  mdn_mixtures: 5     # ← number of Gaussians K
+  mdn_mixtures: 10      # number of Gaussian components
+  var_min:      1e-3    # variance floor
+  beta_entropy: 1e-3    # entropy regulariser weight
+  lr_head:      1e-3    # lower LR for MDN head

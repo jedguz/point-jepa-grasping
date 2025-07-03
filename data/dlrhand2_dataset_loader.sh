@@ -1,7 +1,5 @@
 #!/bin/bash
-
 # Usage:
-# ./data/dlrhand2_dataset_loader.sh gs://adlr2025-pointclouds/grasps/student_grasps_v1/studentGrasping_v1.tar.gz ./data/ 10 --mode ordered --by categories
 # ./data/dlrhand2_dataset_loader.sh gs://adlr2025-pointclouds/grasps/student_grasps_v1/studentGrasping_v1.tar.gz /mnt/disks/ssd 10 --mode ordered --by categories
 set -euo pipefail
 
