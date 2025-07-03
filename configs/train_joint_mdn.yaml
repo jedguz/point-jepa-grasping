@@ -1,0 +1,7 @@
+# ─ inherits all keys from train_joint.yaml (or the base you pasted) ─
+defaults:
+  - train_joint    # or whatever the base file is called
+  - _self_
+
+model:
+  mdn_mixtures: 5     # ← number of Gaussians K

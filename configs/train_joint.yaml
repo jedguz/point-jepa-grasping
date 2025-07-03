@@ -15,10 +15,10 @@ ckpt:
 data:
   root_dir: data/grasp_sample # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /tmp/ssd_cache      # ← change from /mnt/disks/ssd/cache
-  batch_size:    8
+  batch_size:    16
   num_workers:   2
   num_points:    1024
-  # min_score: 0.25        # uncomment to drop low-quality grasps
+  min_score: 5        # uncomment to drop low-quality grasps
 
 # ─── model hyper-params ────────────────────────────────────
 model:
@@ -61,15 +61,15 @@ trainer:
       save_top_k: 1
       mode: min
       filename: joint-{epoch:02d}-{val_loss:.4f}
-  - class_path: callbacks.backbone_embedding_inspector.BackboneEmbeddingInspector
-    init_args:
-      num_batches: 8
+#  - class_path: callbacks.backbone_embedding_inspector.BackboneEmbeddingInspector
+#    init_args:
+ #     num_batches: 8
 
 # ─── logging ────────────────────────────────────────────────
 logger:
   project: adlr
   entity: ADLR2025
-  name: joint_regression
+  name: joint_regression_mdn
 
 # ─── misc ───────────────────────────────────────────────────
 train:
