@@ -1,4 +1,3 @@
-#scripts.dlrhand2_datamodule.py
 """
 Lightning DataModule and PyTorch Dataset for DLR-Hand-2 grasp recordings.
 Optimized for SSD-backed batch-by-batch loading.

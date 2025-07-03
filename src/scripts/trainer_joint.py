@@ -1,7 +1,8 @@
+# src/scripts/trainer_joint.py
 #!/usr/bin/env python3
-# src/scripts/trainer_joint.py  –  Lightning 1.x
 from __future__ import annotations
 import os, re, inspect, sys
+import copy, math
 import hydra, pytorch_lightning as pl, torch
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
@@ -11,6 +12,7 @@ from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
 from scripts.joint_regressor           import JointRegressor
 from scripts.checkpoint_utils          import fetch_checkpoint
 from scripts.checkpoint_utils          import load_full_checkpoint
+from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
 
 
 @hydra.main(config_path="../../configs", config_name="train_joint")
@@ -77,7 +79,10 @@ def main(cfg: DictConfig) -> None:
         precision          = cfg.trainer.precision,
         max_epochs         = max_epochs,
         default_root_dir   = cfg.trainer.default_root_dir,
-        callbacks          = [LearningRateMonitor(logging_interval="epoch")],
+        callbacks          = [
+            LearningRateMonitor(logging_interval="epoch"),
+            BackboneEmbeddingInspector(num_batches=8),
+        ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
     )

@@ -1,3 +1,4 @@
+# src/scripts/dlrhand2_joint_datamodule.py
 """
 Lightning DataModule for **joint-angle regression** on the DLR-Hand-2 dataset.
 Keeps the original SSD caching logic but returns (points, 7-D pose, 12-D joints).
@@ -85,10 +86,15 @@ class DLRHand2JointDataset(Dataset):
             # pick another random index if score below threshold
             return self.__getitem__(torch.randint(len(self), (1,)).item())
 
+        # update to record category and score
         return {
             "points": torch.from_numpy(pc),           # (N,3)
             "pose":   torch.from_numpy(pose),         # (7,)
             "joints": torch.from_numpy(joints),       # (12,)
+            "meta":   {
+                "synset": os.path.basename(os.path.dirname(rec_path)),  # e.g. "03948459"
+                "score": score,
+            },
         }
 
     # -------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+# src.scripts.joint_regressor.py
 """
 JointRegressor – predicts the 12-D finger configuration given:
   • point cloud of the object
