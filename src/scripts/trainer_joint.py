@@ -9,13 +9,14 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers   import WandbLogger
 
 from scripts.dlrhand2_joint_datamodule_new import DLRHand2JointDataModule
+# from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
 from scripts.joint_regressor           import JointRegressor
 from scripts.checkpoint_utils          import fetch_checkpoint
 from scripts.checkpoint_utils          import load_full_checkpoint
 from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
 
 
-@hydra.main(config_path="../../configs", config_name="train_joint")
+@hydra.main(config_path="../../configs", config_name="train_joint_sort")
 def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.train.seed, workers=True)
 
@@ -42,9 +43,8 @@ def main(cfg: DictConfig) -> None:
         batch_size    = cfg.data.batch_size,
         num_workers   = cfg.data.num_workers,
         num_points    = cfg.data.num_points,
-        min_score     = cfg.data.get("min_score", None),
-        top_percentile = 1.0,  
-        sort_by_score = True
+        top_percentile = cfg.data.top_percentile,  
+        sort_by_score = cfg.data.sort_by_score
     )
 
     # ─ model ─────────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ def main(cfg: DictConfig) -> None:
         encoder_mlp_ratio    = cfg.model.encoder_mlp_ratio,
         pooling_type         = cfg.model.pooling_type,
         pooling_heads        = cfg.model.pooling_heads,
+        pooling_dropout      = cfg.model.pooling_dropout,
         head_hidden_dims     = cfg.model.head_hidden_dims,
         pose_dim             = 7,
         lr_backbone          = cfg.model.lr_backbone,

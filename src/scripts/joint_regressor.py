@@ -31,6 +31,7 @@ class JointRegressor(pl.LightningModule):
         encoder_mlp_ratio: float,
         pooling_type: str,
         pooling_heads: int,
+        pooling_dropout: float,
         head_hidden_dims: list[int],
         pose_dim: int = 7,               # always 7
         lr_backbone: float = 3e-4,
@@ -68,7 +69,7 @@ class JointRegressor(pl.LightningModule):
         )
 
         # pooling
-        self.pool = get_pooling(pooling_type, dim=encoder_dim, num_heads=pooling_heads)
+        self.pool = get_pooling(pooling_type, dim=encoder_dim, num_heads=pooling_heads, dropout=pooling_dropout)
 
         # MLP head → 12 numbers
         in_dim = encoder_dim + pose_dim
