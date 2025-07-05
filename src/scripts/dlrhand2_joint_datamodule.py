@@ -153,6 +153,7 @@ class DLRHand2JointDataModule(pl.LightningDataModule):
 
     # -------------------------------------------------------------------------
     def setup(self, stage: str | None = None):
+        print("\n ---SET UP DATA MODULE---: \n")
         if self.dataset is None:
             ds_root = os.path.join(get_original_cwd(), self.hparams.root_dir)
             self.dataset = DLRHand2JointDataset(

@@ -99,7 +99,8 @@ class JointRegressor(pl.LightningModule):
     def _step(self, batch, stage: str):
         pred = self(batch["points"], batch["pose"])       # (B,12)
         loss = F.mse_loss(pred, batch["joints"])
-        self.log(f"{stage}_loss", loss, prog_bar=True)
+        # F.mse_loss(pred_scores, batch["meta"]["scores"])
+        self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=pred.size(0))
         return loss
 
     def training_step  (self, batch, _): return self._step(batch, "train")

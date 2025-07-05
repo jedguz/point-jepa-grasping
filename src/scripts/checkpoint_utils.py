@@ -44,11 +44,11 @@ def load_full_checkpoint(model: JointRegressor, path: str) -> None:
             del checkpoint[k]
         elif k.startswith("predictor."):
             del checkpoint[k]
-
-    missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)  # type: ignore
-    print(f"Missing keys: {missing_keys}")
-    print(f"Unexpected keys: {unexpected_keys}")
-
+    
+    # missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)  # type: ignore
+    # print(f"Missing keys: {missing_keys}")
+    # print(f"Unexpected keys: {unexpected_keys}")
+    
     # fix NaNs in batchnorm, this has been observed in some checkpoints... not sure why
     for name, m in model.named_modules():
         if isinstance(m, nn.BatchNorm1d):

@@ -5,8 +5,8 @@
 
 
 import torch
-from transformers import AutoTokenizer
-from transformers import CLIPTextModelWithProjection
+#from transformers import AutoTokenizer
+#from transformers import CLIPTextModelWithProjection
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 from torch.nn.utils.rnn import pad_sequence
@@ -275,8 +275,8 @@ class Locate3DDecoder(nn.Module):
         # Text Encoding Model
         assert text_encoder in ["clip", "clip-large"], "Only CLIP models are supported"
         self.clip_model = "openai/clip-vit-large-patch14"
-        self.tokenizer = AutoTokenizer.from_pretrained(self.clip_model)
-        self.text_encoder = CLIPTextModelWithProjection.from_pretrained(self.clip_model)
+        #self.tokenizer = AutoTokenizer.from_pretrained(self.clip_model)
+        #self.text_encoder = CLIPTextModelWithProjection.from_pretrained(self.clip_model)
         self.text_encoder_hidden_size = self.text_encoder.config.hidden_size
         self.max_tokens = 77
 

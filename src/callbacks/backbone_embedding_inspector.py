@@ -16,6 +16,7 @@ class BackboneEmbeddingInspector(pl.Callback):
         self.num_batches = num_batches
 
     def on_fit_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        print("\n ---OBTAIN t-SNE EMBEDDINGS---: \n")
         pl_module.eval()
         feats, labels = [], []
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 import os, re, inspect, sys
 import copy, math
 import hydra, pytorch_lightning as pl, torch
+torch.set_float32_matmul_precision('medium')
+
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers   import WandbLogger
@@ -15,8 +17,9 @@ from scripts.checkpoint_utils          import load_full_checkpoint
 from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
 
 
-@hydra.main(config_path="../../configs", config_name="train_joint")
-def main(cfg: DictConfig) -> None:                                                     
+@hydra.main(version_base="1.1", config_path="../../configs", config_name="train_joint")
+def main(cfg: DictConfig) -> None:
+    print("\n ---START TRAINING--: \n")                                                     
     pl.seed_everything(cfg.train.seed, workers=True)
 
     # ─ checkpoint handling ───────────────────────────────────────────────────
@@ -36,6 +39,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     # ─ data ──────────────────────────────────────────────────────────────────
+    print("\n ---INITIATE DATA MODULE---: \n")
     dm = DLRHand2JointDataModule(
         root_dir      = cfg.data.root_dir,
         ssd_cache_dir = cfg.data.ssd_cache_dir,
@@ -47,6 +51,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     # ─ model ─────────────────────────────────────────────────────────────────
+    print("\n ---INITIATE THE REGRESSION TRAINING PIPELINE---: \n")
     model = JointRegressor(
         num_points           = cfg.data.num_points,
         tokenizer_groups     = cfg.model.tokenizer_groups,
@@ -68,12 +73,14 @@ def main(cfg: DictConfig) -> None:
         lr_head              = cfg.model.lr_head,
     )
 
+    print("\n ---LOAD THE JEPA CHECKPOINT---: \n")
     if cfg.ckpt.get("backbone_filename"):
         bb_local = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.backbone_filename)
         bb_ckpt  = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.backbone_filename, bb_local)
         load_full_checkpoint(model, bb_ckpt)
 
     # ─ trainer ───────────────────────────────────────────────────────────────
+    print("\n ---SET UP THE TRAINER---: \n")
     trainer = pl.Trainer(
         logger             = wandb_logger,
         accelerator        = cfg.trainer.accelerator,
@@ -89,7 +96,7 @@ def main(cfg: DictConfig) -> None:
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
     )
 
-    dm.setup()
+    print("START FITTING: \n")
     trainer.fit(model, datamodule=dm, ckpt_path=resume)
 
 
