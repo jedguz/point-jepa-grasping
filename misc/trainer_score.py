@@ -11,8 +11,8 @@ from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers   import WandbLogger
 
-from scripts.dlrhand2_score_datamodule import DLRHand2DataModule
-from scripts.score_regressor           import GraspRegressor
+from misc.dlrhand2_score_datamodule import DLRHand2DataModule
+from misc.score_regressor           import GraspRegressor
 from scripts.checkpoint_utils          import fetch_checkpoint
 from scripts.checkpoint_utils          import load_pretrained_backbone
 

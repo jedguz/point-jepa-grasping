@@ -12,8 +12,8 @@ import pytest
 import torch
 from pathlib import Path
 
-from scripts.dlrhand2_score_datamodule import DLRHand2Dataset, DLRHand2DataModule
-from scripts.score_regressor import GraspRegressor
+from misc.dlrhand2_score_datamodule import DLRHand2Dataset, DLRHand2DataModule
+from misc.score_regressor import GraspRegressor
 
 
 @pytest.fixture(scope="session")

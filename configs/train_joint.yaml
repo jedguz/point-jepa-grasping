@@ -18,7 +18,8 @@ data:
   batch_size:    32
   num_workers:   4
   num_points:    1024
-  min_score: 5        # uncomment to drop low-quality grasps
+  sort_by_score: True
+  top_percentile: 0.7
 
 # ─── model hyper-params ────────────────────────────────────
 model:
@@ -36,6 +37,7 @@ model:
 
   pooling_type:          mean
   pooling_heads:         4
+  pooling_dropout:       0.1
   head_hidden_dims:      [512, 256]
 
   lr_backbone:           0        # 0 = frozen
