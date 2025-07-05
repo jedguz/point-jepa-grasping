@@ -48,13 +48,15 @@ class JointRegressor(pl.LightningModule):
             group_radius= tokenizer_radius,
             token_dim   = encoder_dim,
         )
-
+        
+        """
         # positional encoding on centroids
         self.positional_encoding = nn.Sequential(
             nn.Linear(3, 128), nn.GELU(), nn.Linear(128, encoder_dim)  # 123 hidden dim fixed in prerained backbone
         )
 
         # transformer backbone
+        
         dpr = torch.linspace(0, encoder_drop_path_rate, encoder_depth).tolist()
         self.encoder = TransformerEncoder(
             embed_dim      = encoder_dim,
@@ -67,6 +69,7 @@ class JointRegressor(pl.LightningModule):
             drop_path_rate = dpr,
             add_pos_at_every_layer=True,
         )
+        """
 
         # pooling
         self.pool = get_pooling(pooling_type, dim=encoder_dim, num_heads=pooling_heads, dropout=pooling_dropout)
@@ -89,9 +92,9 @@ class JointRegressor(pl.LightningModule):
         returns  : (B, 12) predicted joint angles
         """
         tokens, centers = self.tokenizer(points)          # (B,L,D), (B,L,3)
-        pos = self.positional_encoding(centers)           # (B,L,D)
-        feats = self.encoder(tokens, pos).last_hidden_state
-        obj_emb = self.pool(feats)                        # (B,D)
+        # pos = self.positional_encoding(centers)           # (B,L,D)
+        # feats = self.encoder(tokens, pos).last_hidden_state
+        obj_emb = self.pool(tokens)                        # (B,D)
         fused = torch.cat([obj_emb, pose_vec], dim=-1)     # (B,D+7)
         return self.head(fused)                           # (B,12)
 

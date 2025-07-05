@@ -8,7 +8,7 @@ ckpt:
   filename: ""
   bucket: adlr2025-pointclouds       # GCS bucket
   local_dir: checkpoints             # local cache dir
-  extra_epochs: 2                   # added to epochs parsed from filename
+  extra_epochs: 30                   # added to epochs parsed from filename
   backbone_filename: pretrain_pointjepa_epoch=499-step=40500.ckpt  # remove for training from scratch
 
 # ─── data module ────────────────────────────────────────────
@@ -18,7 +18,7 @@ data:
   batch_size:    32
   num_workers:   4
   num_points:    1024
-  sort_by_score: True
+  sort_by_score: False
   top_percentile: 0.7
 
 # ─── model hyper-params ────────────────────────────────────

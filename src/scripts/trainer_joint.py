@@ -90,7 +90,7 @@ def main(cfg: DictConfig) -> None:
         default_root_dir   = cfg.trainer.default_root_dir,
         callbacks          = [
             LearningRateMonitor(logging_interval="epoch"),
-            BackboneEmbeddingInspector(num_batches=8),
+            # BackboneEmbeddingInspector(num_batches=8),
         ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
