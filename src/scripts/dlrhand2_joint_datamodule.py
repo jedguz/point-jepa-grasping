@@ -22,6 +22,9 @@ import trimesh
 
 from datasets.manifest_dataset import ManifestDataset
 
+PATH_PREFIX = "studentGrasping/student_grasps_v1"
+
+
 def _sample_mesh_as_pc(mesh_path: str, n: int = 2048) -> np.ndarray:
     """
     Load an OBJ, collapse scenes → single Trimesh, then fps-sample `n` points.
@@ -182,11 +185,14 @@ class DLRHand2JointDataModule(pl.LightningDataModule):
 
         # dataset root (same rule)
         root_abs = to_absolute_path(self.hparams.root_dir)
+        root_parent = root_abs
         root_tail = os.path.join(*root_abs.split(os.sep)[-4:])  # last 4 dirs
 
-        # ───────── helper: turn manifest path → absolute on disk ──────────
         def canonical(p: str) -> str:
-            return to_absolute_path(p)          # ← one and done
+            if os.path.isabs(p):               # already absolute
+                return p
+            return os.path.join(root_abs, p)  # just stick it onto root_parent
+        # ------------------------------------------------------------------------
 
         needed_recs = {canonical(p) for split in manifest.values()
                                    for p, _ in split}

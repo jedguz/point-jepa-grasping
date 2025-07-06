@@ -16,7 +16,7 @@ ckpt:
 # ─── data module ────────────────────────────────────────────
 data:
   preload_all: true     # eager preload
-  root_dir: /mnt/disks/ssd/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
+  root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
   split_file: configs/splits/split_25.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    32
