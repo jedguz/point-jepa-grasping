@@ -49,7 +49,7 @@ class JointRegressor(pl.LightningModule):
             token_dim   = encoder_dim,
         )
         
-        """
+        
         # positional encoding on centroids
         self.positional_encoding = nn.Sequential(
             nn.Linear(3, 128), nn.GELU(), nn.Linear(128, encoder_dim)  # 123 hidden dim fixed in prerained backbone
@@ -69,7 +69,7 @@ class JointRegressor(pl.LightningModule):
             drop_path_rate = dpr,
             add_pos_at_every_layer=True,
         )
-        """
+        
 
         # pooling
         self.pool = get_pooling(pooling_type, dim=encoder_dim, num_heads=pooling_heads, dropout=pooling_dropout)
@@ -92,9 +92,9 @@ class JointRegressor(pl.LightningModule):
         returns  : (B, 12) predicted joint angles
         """
         tokens, centers = self.tokenizer(points)          # (B,L,D), (B,L,3)
-        # pos = self.positional_encoding(centers)           # (B,L,D)
-        # feats = self.encoder(tokens, pos).last_hidden_state
-        obj_emb = self.pool(tokens)                        # (B,D)
+        pos = self.positional_encoding(centers)           # (B,L,D)
+        feats = self.encoder(tokens, pos).last_hidden_state
+        obj_emb = self.pool(feats)                        # (B,D)
         fused = torch.cat([obj_emb, pose_vec], dim=-1)     # (B,D+7)
         return self.head(fused)                           # (B,12)
 
@@ -119,7 +119,11 @@ class JointRegressor(pl.LightningModule):
                 {"params": self.positional_encoding.parameters(), "lr": self.hparams.lr_backbone},
                 {"params": self.encoder.parameters(),             "lr": self.hparams.lr_backbone}
             ]
-        head_params = {"params": self.head.parameters(), "lr": self.hparams.lr_head}
+        pool_params = list(self.pool.parameters())   # ← empty list for mean-pool
+        head_params = {
+            "params": list(self.head.parameters()) + pool_params,
+            "lr": self.hparams.lr_head,
+        }
 
         optim = torch.optim.AdamW(bb_params + [head_params], weight_decay=self.hparams.weight_decay)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=self.trainer.max_epochs)
