@@ -20,24 +20,27 @@ VAL_PCT_OBJ      = 0.10                    # objects
 TEST_PCT_OBJ     = 0.10                    # objects
 TEST_PCT_SCENE   = 0.10                    # scenes per *seen* object
 SEED             = 42
+PATH_PREFIX = "studentGrasping/student_grasps_v1"
 
 def list_scenes(root: str):
-    """
-    Return:
-        by_obj  : dict key "<synset>/<objectID>" → list[(npz, grasp_idx)]
-        by_syn  : dict key synsetID             → list[(npz, grasp_idx)]
-    """
-    rec_paths = glob.glob(os.path.join(root, "**", "recording.npz"), recursive=True)
+    rec_paths = glob.glob(os.path.join(root, "**", "recording.npz"),
+                          recursive=True)
     by_obj, by_syn = defaultdict(list), defaultdict(list)
+
     for rp in rec_paths:
-        rel = os.path.relpath(rp, root).split(os.sep)
-        syn, obj, scene = rel[0], rel[1], rel[2]
+        tail = os.path.relpath(rp, root)            # "02808440/…/recording.npz"
+        syn, obj, scene = tail.split(os.sep)[:3]    # correct IDs
+
+        rel_str = os.path.join(PATH_PREFIX, tail)   # prefixed path for JSON
+
         key_obj = f"{syn}/{obj}"
         with np.load(rp) as d:
             n_grasps = d["grasps"].shape[0]
-        samples = [(rp, gi) for gi in range(n_grasps)]
+        samples = [(rel_str, gi) for gi in range(n_grasps)]
+
         by_obj[key_obj].extend(samples)
         by_syn[syn].extend(samples)
+
     return by_obj, by_syn
 
 def split_objects(obj_keys, pct_val, pct_test, rng):
