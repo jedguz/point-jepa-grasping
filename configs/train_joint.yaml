@@ -22,7 +22,7 @@ data:
   batch_size:    32
   num_workers:   4
   num_points:    1024
-  score_temp: 0.2          # set >0 for soft score-sampling
+  score_temp: 0.0          # set >0 for soft score-sampling
 
 # ─── model hyper-params ────────────────────────────────────
 model:
@@ -48,7 +48,7 @@ model:
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:
-  max_epochs: 20
+  max_epochs: 30
   default_root_dir: artifacts
   accelerator: gpu
   devices: 1
