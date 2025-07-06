@@ -3,6 +3,8 @@
 #   • runs from the repo root on your HDD copy
 #   • uses lazy loading (preload_all: false)
 #   • 10 % subset manifest
+#
+# for hdd testing run ./data/dlrhand2_dataset_loader.sh gs://adlr2025-pointclouds/grasps/student_grasps_v1/studentGrasping_v1.tar.gz data/student_grasping 100 --mode ordered --by categories
 # ────────────────────────────────────────────────────────────────
 defaults:
   - train_joint        # base SSD config
