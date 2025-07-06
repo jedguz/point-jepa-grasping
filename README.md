@@ -1,17 +1,19 @@
 ## Setup
 
+### *Update 6 July: Changed A100 to V100*
+
 ### 1. Create a new VM:
 
-gcloud compute instances create train-regression \
-  --zone=europe-west4-b \
-  --machine-type=a2-highgpu-1g \
-  --accelerator=type=nvidia-tesla-a100,count=1 \
-  --local-ssd=interface=nvme \
-  --maintenance-policy=TERMINATE \
-  --restart-on-failure \
-  --image-family=pytorch-latest-gpu \
-  --image-project=deeplearning-platform-release \
-  --boot-disk-size=200GB \
+gcloud compute instances create train-regression \\  
+  --zone=europe-west4-b \\  
+  --machine-type=n1-standard-8 \\  
+  --accelerator=type=nvidia-tesla-v100,count=1 \\  
+  --local-ssd=interface=nvme \\  
+  --maintenance-policy=TERMINATE \\  
+  --restart-on-failure \\   
+  --image-family=pytorch-latest-gpu \\  
+  --image-project=deeplearning-platform-release \\  
+  --boot-disk-size=200GB \\  
   --tags=allow-ssh
 
 ### 2. Mount the SSD disk:
@@ -51,31 +53,29 @@ python src/scripts/trainer_joint.py
 
 ## Alternative Using Snapshots
 
-### 1. Snapshot current HDD/boot disk
+1. Create a Snapshot  
+gcloud compute snapshots create SNAPNAME \\  
+  --source-disk=adlr-jepa \\  
+  --source-disk-zone=europe-west4-b \\  
+  --quiet  
 
-gcloud compute disks snapshot adlr-jepa \
-  --zone=europe-west4-b \
-  --snapshot-names=adlr-jepa-boot-snap \
-  --quiet
+2. Create a New Disk from the Snapshot  
+gcloud compute disks create DISKNAME \\  
+  --zone=europe-west4-b \\  
+  --source-snapshot=SNAPNAME \\  
+  --quiet  
 
-### 2. Create a new (cloned) boot disk from that snapshot
+3. Launch a VM with V100 GPU  
+gcloud compute instances create train-regression \\  
+  --zone=europe-west4-b \\  
+  --machine-type=n1-standard-8 \\  
+  --accelerator=type=nvidia-tesla-v100,count=1 \\  
+  --disk=name=DISKNAME,boot=yes,auto-delete=yes \\  
+  --local-ssd=interface=nvme \\  
+  --maintenance-policy=TERMINATE \\  
+  --restart-on-failure \\  
+  --tags=allow-ssh  
 
-gcloud compute disks create train-regression-boot \
-  --zone=europe-west4-b \
-  --source-snapshot=adlr-jepa-boot-snap \
-  --quiet
-
-### 3. Spin up A100 SSD VM
-
-gcloud compute instances create train-regression \
-  --zone=europe-west4-b \
-  --machine-type=a2-highgpu-1g \
-  --accelerator=type=nvidia-tesla-a100,count=1 \
-  --disk=name=train-regression-boot,boot=yes,auto-delete=yes \
-  --local-ssd=interface=nvme \
-  --maintenance-policy=TERMINATE \
-  --restart-on-failure \
-  --tags=allow-ssh
 
   ### 4. Mount SSD
 
