@@ -49,3 +49,6 @@ __pycache__/
 
 # Misc
 *.log
+
+data/student_grasping/studentGrasping/
+cache

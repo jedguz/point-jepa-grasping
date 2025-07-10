@@ -24,12 +24,14 @@ def main(cfg: DictConfig) -> None:
 
     # ─ checkpoint handling ───────────────────────────────────────────────────
     os.makedirs(cfg.ckpt.local_dir, exist_ok=True)
-    ckpt_file = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.filename)
-    ckpt_path = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.filename, ckpt_file)
-    resume = ckpt_path if ckpt_path and os.path.isfile(ckpt_path) else None
-    pre_ep = int(re.search(r"epoch=(\d+)-", ckpt_path or "") .group(1)) if resume else 0
-    max_epochs = pre_ep + cfg.ckpt.extra_epochs
-    print(f"⚙️ Resuming at epoch {pre_ep}; training until {max_epochs}")
+    resume = None
+    if cfg.ckpt.filename:                               # only if user passes one
+        ckpt_file = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.filename)
+        ckpt_path = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.filename, ckpt_file)
+        resume = ckpt_path if ckpt_path and os.path.isfile(ckpt_path) else None
+
+    max_epochs = cfg.trainer.max_epochs                 # <-- trust the YAML
+    print(f"⚙️ Training for {max_epochs} epoch(s)")
 
     # ─ logger ────────────────────────────────────────────────────────────────
     wandb_logger = WandbLogger(
@@ -46,8 +48,9 @@ def main(cfg: DictConfig) -> None:
         batch_size    = cfg.data.batch_size,
         num_workers   = cfg.data.num_workers,
         num_points    = cfg.data.num_points,
-        top_percentile = cfg.data.top_percentile,
-        sort_by_score = cfg.data.sort_by_score,
+        score_temp     = cfg.data.score_temp,
+        split_file     = cfg.data.split_file,
+        preload_all   = cfg.data.preload_all,  
     )
 
     # ─ model ─────────────────────────────────────────────────────────────────

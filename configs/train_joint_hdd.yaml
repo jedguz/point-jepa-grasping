@@ -1,0 +1,33 @@
+# ────────────────────────────────────────────────────────────────
+# configs/train_joint_hdd.yaml
+#   • runs from the repo root on your HDD copy
+#   • uses lazy loading (preload_all: false)
+#   • 10 % subset manifest
+#
+# for hdd testing run ./data/dlrhand2_dataset_loader.sh gs://adlr2025-pointclouds/grasps/student_grasps_v1/studentGrasping_v1.tar.gz data/student_grasping 100 --mode ordered --by categories
+# ────────────────────────────────────────────────────────────────
+defaults:
+  - train_joint        # base SSD config
+  - _self_
+
+data:
+  # absolute path to the HDD dataset -----------------------------
+  root_dir: data/student_grasping/studentGrasping/student_grasps_v1
+
+  # local cache so you don't write into /mnt/disks/ssd ----------
+  ssd_cache_dir: cache
+
+  # 10 % split manifest (relative paths stay portable) ----------
+  split_file: configs/splits/split_25.json
+
+  # NEW flag: lazy or eager preload -----------------------------
+  preload_all: true
+
+  batch_size:   8
+  num_workers:  2
+  score_temp:   0.0
+
+trainer:
+  default_root_dir: artifacts_hdd
+  max_epochs: 1
+  log_every_n_steps: 2
