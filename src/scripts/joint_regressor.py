@@ -91,12 +91,55 @@ class JointRegressor(pl.LightningModule):
         pose_vec : (B, 7)
         returns  : (B, 12) predicted joint angles
         """
+
+        """
+        Tokenizer + pos. enc. experiment
+        # comment out encoder instance creation in init, and its params in the optimizer
+
+        tokens, centers = self.tokenizer(points)          # (B,L,D), (B,L,3)
+        pos = self.positional_encoding(centers)           # (B,L,D)
+
+        obj_emb = self.pool(tokens+pos)                    # (B,D)
+        fused = torch.cat([obj_emb, pose_vec], dim=-1)     # (B,D+7)
+        return self.head(fused)  
+        
+
+        Tokenizer + sequencer + pos. enc. experiment
+        # create self.point_sequencer = PointSequencer(method="morton") in init
+        # comment out encoder instance creation in init, and its params in the optimizer
+
+        tokens, centers = self.tokenizer(points)          # (B,L,D), (B,L,3)
+        tokens, centers = self.point_sequencer.reorder(tokens, centers) # (B,L,D), (B,L,3)
+        pos = self.positional_encoding(centers)           # (B,L,D)
+
+        obj_emb = self.pool(tokens+pos)                    # (B,D)
+        fused = torch.cat([obj_emb, pose_vec], dim=-1)     # (B,D+7)
+        return self.head(fused)  
+        
+
+        Averaged transformer layers experiment
+
+        tokens, centers = self.tokenizer(points)          # (B,L,D), (B,L,3)
+        pos = self.positional_encoding(centers)           # (B,L,D)
+
+        output = self.encoder(
+            tokens, pos, return_hidden_states=True
+        )
+        hidden_states = [F.layer_norm((output.hidden_states[i]), output.hidden_states[i].shape[-1:]) for i in [3,7,11]]  # type: ignore [(B, T, C)]
+        feats = torch.stack(hidden_states, dim=0).mean(0)  # (B, T, C)
+
+        obj_emb = self.pool(feats)                        # (B,D)
+        fused = torch.cat([obj_emb, pose_vec], dim=-1)     # (B,D+7)
+        return self.head(fused)                           # (B,12)
+        """
+
         tokens, centers = self.tokenizer(points)          # (B,L,D), (B,L,3)
         pos = self.positional_encoding(centers)           # (B,L,D)
         feats = self.encoder(tokens, pos).last_hidden_state
         obj_emb = self.pool(feats)                        # (B,D)
         fused = torch.cat([obj_emb, pose_vec], dim=-1)     # (B,D+7)
         return self.head(fused)                           # (B,12)
+    
 
     # ------------------------------------------------------------- train / val
     def _step(self, batch, stage: str):
