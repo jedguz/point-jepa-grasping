@@ -97,6 +97,7 @@ def main(cfg: DictConfig) -> None:
         ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
+        overfit_batches    = cfg.trainer.get("overfit_batches", 0),
     )
 
     print("START FITTING: \n")
