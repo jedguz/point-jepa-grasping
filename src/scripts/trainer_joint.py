@@ -74,6 +74,8 @@ def main(cfg: DictConfig) -> None:
         pose_dim             = 7,
         lr_backbone          = cfg.model.lr_backbone,
         lr_head              = cfg.model.lr_head,
+        weight_decay         = cfg.model.weight_decay,
+        encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
     )
 
     print("\n ---LOAD THE JEPA CHECKPOINT---: \n")

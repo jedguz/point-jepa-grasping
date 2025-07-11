@@ -15,11 +15,11 @@ ckpt:
 
 # ─── data module ────────────────────────────────────────────
 data:
-  preload_all: true     # eager preload
+  preload_all: false     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
   split_file: configs/splits/split_25.json   # ← choose 10 / 25 / 50 / 100
-  batch_size:    32
+  batch_size:    64
   num_workers:   4
   num_points:    1024
   score_temp: 0.0          # set >0 for soft score-sampling
@@ -38,13 +38,16 @@ model:
   encoder_drop_path_rate: 0.1
   encoder_mlp_ratio:     4
 
-  pooling_type:          mean
+  pooling_type:          att
   pooling_heads:         4
-  pooling_dropout:       0.1
-  head_hidden_dims:      [512, 256]
+  pooling_dropout:       0.0
 
-  lr_backbone:           0        # 0 = frozen
+  head_hidden_dims:      [512, 256, 128, 12]
+
+  lr_backbone:           5e-5        # 0 = frozen
   lr_head:               3e-3
+  encoder_unfreeze_epoch: 0
+  weight_decay:          0.005          # AdamW weight-decay
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:

@@ -14,15 +14,15 @@ data:
   # 10 % split manifest (relative paths stay portable) ----------
   split_file: configs/splits/split_10.json  # 10 / 25/ 50 / 100
   preload_all: false          # faster start-up; we only touch one batch
-  batch_size: 8               # small so gradient stats are visible
+  batch_size: 32               # small so gradient stats are visible
 
-model:
-  lr_backbone: 0           # <-- enable grads in tokenizer + PE + encoder
+#model:
+
 trainer:
-  max_epochs: 150             # plenty of steps; will stop early anyway
+  max_epochs: 50             # plenty of steps; will stop early anyway
  # precision: 32-true          # avoid AMP underflow during debugging
   overfit_batches: 128          # <-- *THE* key line
   log_every_n_steps: 1        # see the curve in real time
   callbacks: []               # turn off EarlyStopping & Checkpoint for speed
 logger:
-  name: debug_overfit
+  name: debug_position_embedding_off
