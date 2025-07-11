@@ -1,0 +1,28 @@
+# --- EXPERIMENT: single-batch over-fit --------------------------------------
+
+defaults:
+  - train_joint        # base SSD config
+  - _self_
+
+data:
+  # absolute path to the HDD dataset -----------------------------
+  root_dir: data/student_grasping
+
+  # local cache so you don't write into /mnt/disks/ssd ----------
+  ssd_cache_dir: cache
+
+  # 10 % split manifest (relative paths stay portable) ----------
+  split_file: configs/splits/split_10.json  # 10 / 25/ 50 / 100
+  preload_all: false          # faster start-up; we only touch one batch
+  batch_size: 8               # small so gradient stats are visible
+
+model:
+  lr_backbone: 0           # <-- enable grads in tokenizer + PE + encoder
+trainer:
+  max_epochs: 15             # plenty of steps; will stop early anyway
+ # precision: 32-true          # avoid AMP underflow during debugging
+  overfit_batches: 1          # <-- *THE* key line
+  log_every_n_steps: 1        # see the curve in real time
+  callbacks: []               # turn off EarlyStopping & Checkpoint for speed
+logger:
+  name: debug_overfit
