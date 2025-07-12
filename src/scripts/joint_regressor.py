@@ -12,6 +12,7 @@ The class now supports Point-JEPA fine-tuning:
 """
 
 from __future__ import annotations
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,6 +22,7 @@ import math
 
 from modules.tokenizer   import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
+from utils import transforms
 from scripts.pooling     import get_pooling
 
 
@@ -50,12 +52,12 @@ class JointRegressor(pl.LightningModule):
         lr_head: float = 3e-3,
         weight_decay: float = 1e-2,
         encoder_unfreeze_epoch: int = 0,
-        num_hyp: int = 8,                            # ★ NEW  (K)
+        num_pred: int = 5,                            # ★ NEW  (K)
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["head_hidden_dims"])
 
-        self.num_hyp = num_hyp                      # ★ NEW
+        self.num_pred = num_pred                      # ★ NEW
         self.lr_backbone = lr_backbone
         self.lr_head     = lr_head
         self.weight_decay = weight_decay
@@ -100,7 +102,7 @@ class JointRegressor(pl.LightningModule):
 
         # ------------------- head --------------------------
         in_dim = encoder_dim + pose_dim
-        dims   = [in_dim] + head_hidden_dims + [12 * num_hyp]   # ★ CHANGED
+        dims   = [in_dim] + head_hidden_dims + [12 * (num_pred + 2)]   # ★ CHANGED
         mlp: list[nn.Module] = []
         for i in range(len(dims) - 2):
             mlp.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
@@ -115,17 +117,29 @@ class JointRegressor(pl.LightningModule):
         feats = self.encoder(tokens, pos).last_hidden_state
         obj_emb = self.pool(feats)
         fused   = torch.cat([obj_emb, pose_vec], dim=-1)
-        pred    = self.head(fused)                       # (B, 12*K)
-        return pred.view(-1, self.num_hyp, 12)           # ★ CHANGED -> (B,K,12)
+        pred    = self.head(fused)                       # (B, 12*K + 2)
+
+        pred_dim = self.num_pred * 12
+        pred_angles = pred[:, 0 : pred_dim].view(-1, self.num_pred, 12)
+        pred_score = pred[:, pred_dim : (pred_dim + self.num_pred)]
+        pred_logit = pred[:, (pred_dim + self.num_pred) : ]
+        return pred_angles, pred_logit, pred_score  # ★ CHANGED -> (B,K,12)
 
     # ------------------------------------------- train / val
     def _step(self, batch, stage: str):
-        pred  = self(batch["points"], batch["pose"])     # (B,K,12)
+        pred_angles, pred_logit, pred_score  = self(batch["points"], batch["pose"]) 
         gt    = batch["joints"].unsqueeze(1)             # (B,1,12)
 
-        per_h = (pred - gt).pow(2).mean(-1)              # (B,K)
-        loss  = per_h.min(-1).values.mean()              # ★ NEW Min-of-K
+        per_h = (pred_angles - gt).pow(2).mean(-1)              # (B,K)
+        min_indices = torch.argmin(per_h, dim=1)
+        
+        num_pred = self.num_pred
 
+        loss_angles  = per_h.min(-1).values.mean()              # ★ NEW Min-of-K       
+        loss_score = F.mse_loss(pred_score, batch["meta"]["score"].unsqueeze(1).expand(-1, num_pred))
+        loss_logit = F.cross_entropy(pred_logit, min_indices)
+
+        loss = loss_angles + 0.1 * loss_score + loss_logit
         self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=gt.size(0))
         return loss
 

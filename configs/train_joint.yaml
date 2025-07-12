@@ -15,10 +15,10 @@ ckpt:
 
 # ─── data module ────────────────────────────────────────────
 data:
-  preload_all: false     # eager preload
+  preload_all: true     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
-  split_file: configs/splits/split_25.json   # ← choose 10 / 25 / 50 / 100
+  split_file: configs/splits/split_10.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    64
   num_workers:   4
   num_points:    1024
@@ -43,6 +43,7 @@ model:
   pooling_dropout:       0.0
 
   head_hidden_dims:      [512, 256, 128, 12]
+  num_pred:              5
 
   lr_backbone:           5e-5        # 0 = frozen
   lr_head:               3e-3
@@ -51,7 +52,7 @@ model:
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:
-  max_epochs: 30
+  max_epochs: 10
   default_root_dir: artifacts
   accelerator: gpu
   devices: 1

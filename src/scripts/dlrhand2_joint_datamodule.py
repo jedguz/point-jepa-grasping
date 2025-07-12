@@ -149,7 +149,7 @@ class DLRHand2JointDataset(Dataset):
         data, pc = self.data_cache[c_npz], self.pc_cache[c_npz]
         g = data["grasps"][gi].astype(np.float32)
         pose, joints = g[:7], g[7:]
-        score = float(data["scores"][gi])
+        score = np.float32(data["scores"][gi])
 
         return {"points": torch.from_numpy(pc),
                 "pose":   torch.from_numpy(pose),

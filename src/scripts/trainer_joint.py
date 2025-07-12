@@ -76,6 +76,7 @@ def main(cfg: DictConfig) -> None:
         lr_head              = cfg.model.lr_head,
         weight_decay         = cfg.model.weight_decay,
         encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
+        num_pred               = cfg.model.num_pred,
     )
 
     print("\n ---LOAD THE JEPA CHECKPOINT---: \n")
@@ -102,7 +103,7 @@ def main(cfg: DictConfig) -> None:
         overfit_batches    = cfg.trainer.get("overfit_batches", 0),
     )
 
-    print("START FITTING: \n")
+    print("\n ---START FITTING---: \n")
     trainer.fit(model, datamodule=dm, ckpt_path=resume)
 
 
