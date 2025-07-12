@@ -18,7 +18,7 @@ data:
   ssd_cache_dir: cache
 
   # 10 % split manifest (relative paths stay portable) ----------
-  split_file: configs/splits/split_25.json
+  split_file: configs/splits/split_25.json  # 10 / 25/ 50 / 100
 
   # NEW flag: lazy or eager preload -----------------------------
   preload_all: true

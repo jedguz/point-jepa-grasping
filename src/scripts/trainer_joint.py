@@ -74,6 +74,8 @@ def main(cfg: DictConfig) -> None:
         pose_dim             = 7,
         lr_backbone          = cfg.model.lr_backbone,
         lr_head              = cfg.model.lr_head,
+        weight_decay         = cfg.model.weight_decay,
+        encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
     )
 
     print("\n ---LOAD THE JEPA CHECKPOINT---: \n")
@@ -97,6 +99,7 @@ def main(cfg: DictConfig) -> None:
         ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
+        overfit_batches    = cfg.trainer.get("overfit_batches", 0),
     )
 
     print("START FITTING: \n")
