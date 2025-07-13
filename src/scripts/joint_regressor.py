@@ -52,12 +52,14 @@ class JointRegressor(pl.LightningModule):
         lr_head: float = 3e-3,
         weight_decay: float = 1e-2,
         encoder_unfreeze_epoch: int = 0,
-        num_pred: int = 5,                            # ★ NEW  (K)
+        num_pred: int = 5,                            
+        loss_type: str = "basic",
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["head_hidden_dims"])
 
-        self.num_pred = num_pred                      # ★ NEW
+        self.num_pred = num_pred           
+        self.loss_type = loss_type
         self.lr_backbone = lr_backbone
         self.lr_head     = lr_head
         self.weight_decay = weight_decay
@@ -102,13 +104,32 @@ class JointRegressor(pl.LightningModule):
 
         # ------------------- head --------------------------
         in_dim = encoder_dim + pose_dim
-        dims   = [in_dim] + head_hidden_dims + [12 * (num_pred + 2)]   # ★ CHANGED
+
+        if self.loss_type == "basic":
+            dims   = [in_dim] + head_hidden_dims + [12]
+        elif self.loss_type == "min_k":
+            dims   = [in_dim] + head_hidden_dims + [12 * num_pred]
+        elif self.loss_type == "min_k_logit":
+            dims   = [in_dim] + head_hidden_dims + [12 * (num_pred + 1)]
+        elif self.loss_type == "full":
+            dims   = [in_dim] + head_hidden_dims + [12 * (num_pred + 2)]
+        else:
+            raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
+                        f"basic, min_k, attention, min_k_logit, full")
+        
+        if self.loss_type in ["min_k_logit", "full"]:
+            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.2, dtype=torch.float32)))
+
         mlp: list[nn.Module] = []
         for i in range(len(dims) - 2):
             mlp.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
         mlp.append(nn.Linear(dims[-2], dims[-1]))
         self.head = nn.Sequential(*mlp)
 
+    @property
+    def logit_scale(self):
+        return self.logit_scale_raw.exp().clamp(0.01, 6.0)
+    
     # ------------------------------------------------ forward
     @torch.cuda.amp.autocast(enabled=True)
     def forward(self, points: torch.Tensor, pose_vec: torch.Tensor) -> torch.Tensor:
@@ -117,30 +138,72 @@ class JointRegressor(pl.LightningModule):
         feats = self.encoder(tokens, pos).last_hidden_state
         obj_emb = self.pool(feats)
         fused   = torch.cat([obj_emb, pose_vec], dim=-1)
-        pred    = self.head(fused)                       # (B, 12*K + 2)
-
+        pred    = self.head(fused)                 
         pred_dim = self.num_pred * 12
-        pred_angles = pred[:, 0 : pred_dim].view(-1, self.num_pred, 12)
-        pred_score = pred[:, pred_dim : (pred_dim + self.num_pred)]
-        pred_logit = pred[:, (pred_dim + self.num_pred) : ]
-        return pred_angles, pred_logit, pred_score  # ★ CHANGED -> (B,K,12)
+        
+        if self.loss_type == "basic":
+            pred_angles = pred  # (B,12)
+            return pred_angles 
+        elif self.loss_type == "min_k":
+            pred_angles = pred.view(-1, self.num_pred, 12) # (B,num_pred,12)
+            return pred_angles
+        elif self.loss_type == "min_k_logit":
+            pred_angles = pred[:, :pred_dim].view(-1, self.num_pred, 12) # (B,num_pred,12)
+            pred_logit = pred[:, pred_dim:]                              # (B,num_pred)
+            return pred_angles, pred_logit
+        elif self.loss_type == "full":
+            pred_angles = pred[:, :pred_dim].view(-1, self.num_pred, 12) # (B,num_pred,12)
+            pred_logit = pred[:, pred_dim : (pred_dim + self.num_pred)]  # (B,num_pred)
+            pred_score = pred[:, (pred_dim + self.num_pred) : ]          # (B,num_pred)
+            return pred_angles, pred_logit, pred_score
+        else:
+            raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
+                        f"basic, min_k, attention, min_k_logit, full")
 
     # ------------------------------------------- train / val
     def _step(self, batch, stage: str):
-        pred_angles, pred_logit, pred_score  = self(batch["points"], batch["pose"]) 
-        gt    = batch["joints"].unsqueeze(1)             # (B,1,12)
+        if self.loss_type == "basic":
+            pred = self(batch["points"], batch["pose"]) 
 
-        per_h = (pred_angles - gt).pow(2).mean(-1)              # (B,K)
-        min_indices = torch.argmin(per_h, dim=1)
-        
-        num_pred = self.num_pred
+            loss = F.mse_loss(pred, batch["joints"])
 
-        loss_angles  = per_h.min(-1).values.mean()              # ★ NEW Min-of-K       
-        loss_score = F.mse_loss(pred_score, batch["meta"]["score"].unsqueeze(1).expand(-1, num_pred))
-        loss_logit = F.cross_entropy(pred_logit, min_indices)
+        elif self.loss_type == "min_k":
+            pred_angles  = self(batch["points"], batch["pose"])  # (B,num_pred,12)
+            gt    = batch["joints"].unsqueeze(1)                 # (B,1,12)         
+            per_h = (pred_angles - gt).pow(2).mean(-1) 
 
-        loss = loss_angles + 0.1 * loss_score + loss_logit
+            loss = per_h.min(-1).values.mean()  
+
+        elif self.loss_type == "min_k_logit":
+            pred_angles, pred_logit  = self(batch["points"], batch["pose"]) # (B,num_pred,12), (B,12)
+            gt    = batch["joints"].unsqueeze(1)                            # (B,1,12)          
+            per_h = (pred_angles - gt).pow(2).mean(-1) 
+            min_indices = torch.argmin(per_h, dim=1)
+
+            loss_angles = per_h.min(-1).values.mean()  
+            loss_logit = F.cross_entropy(pred_logit, min_indices)
+            loss = loss_angles + self.logit_scale * loss_logit
+
+        elif self.loss_type == "full":
+            pred_angles, pred_logit, pred_score  = self(batch["points"], batch["pose"]) 
+            gt    = batch["joints"].unsqueeze(1)                            # (B,1,12)
+            per_h = (pred_angles - gt).pow(2).mean(-1) 
+            min_indices = torch.argmin(per_h, dim=1)
+
+            loss_angles = per_h.min(-1).values.mean()  
+            loss_logit = F.cross_entropy(pred_logit, min_indices)
+            loss_score = F.mse_loss(pred_score, batch["meta"]["score"].unsqueeze(1).expand(-1, self.num_pred))
+            loss = loss_angles + 0.1 * loss_score + self.logit_scale * loss_logit
+
+        else:
+            raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
+                        f"basic, min_k, attention, min_k_logit, full")
+
         self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=gt.size(0))
+        if hasattr(self, "logit_scale_raw"):
+            self.log(f"{stage}_logit_scale_raw", self.logit_scale_raw.item(), prog_bar=True)
+            self.log(f"{stage}_logit_scale", self.logit_scale.item(), prog_bar=True)
+
         return loss
 
     def training_step(self, batch, _): return self._step(batch, "train")
@@ -155,10 +218,17 @@ class JointRegressor(pl.LightningModule):
         )
         head_params = list(self.pool.parameters()) + list(self.head.parameters())
 
+        scale_params = []
+        if hasattr(self, "logit_scale"):
+            scale_params.append(self.logit_scale_raw)
+        if hasattr(self, "pe_scale"):
+            scale_params.append(self.pe_scale)
+
         optimizer = torch.optim.AdamW(
             [
                 {"params": backbone_params, "lr": self.hparams.lr_backbone},
                 {"params": head_params,     "lr": self.hparams.lr_head},
+                {"params": scale_params,    "lr": self.hparams.lr_backbone}
             ],
             weight_decay=self.hparams.weight_decay,
         )
@@ -175,7 +245,7 @@ class JointRegressor(pl.LightningModule):
             return 0.5 * (1.0 + math.cos(math.pi * progress))
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}, "gradient_clip_val": 1.0}
     
     
     # ---------- DEBUG SECTION ----------

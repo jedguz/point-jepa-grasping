@@ -77,6 +77,7 @@ def main(cfg: DictConfig) -> None:
         weight_decay         = cfg.model.weight_decay,
         encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
         num_pred               = cfg.model.num_pred,
+        loss_type              = cfg.model.loss_type,
     )
 
     print("\n ---LOAD THE JEPA CHECKPOINT---: \n")
