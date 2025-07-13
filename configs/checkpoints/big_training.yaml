@@ -1,0 +1,67 @@
+ckpt:
+  filename: ''
+  bucket: adlr2025-pointclouds
+  local_dir: checkpoints
+  backbone_filename: pretrain_pointjepa_epoch=499-step=40500.ckpt
+data:
+  preload_all: true
+  root_dir: /mnt/disks/ssd
+  ssd_cache_dir: /mnt/disks/ssd/cache
+  split_file: configs/splits/split_50.json
+  batch_size: 64
+  num_workers: 4
+  num_points: 1024
+  score_temp: 0.0
+model:
+  tokenizer_groups: 64
+  tokenizer_group_size: 32
+  tokenizer_radius: 0.05
+  transformations:
+  - none
+  encoder_dim: 384
+  encoder_depth: 12
+  encoder_heads: 8
+  encoder_dropout: 0.1
+  encoder_attn_dropout: 0.1
+  encoder_drop_path_rate: 0.1
+  encoder_mlp_ratio: 4
+  pooling_type: att
+  pooling_heads: 4
+  pooling_dropout: 0.0
+  head_hidden_dims:
+  - 512
+  - 256
+  - 128
+  - 12
+  num_pred: 5
+  loss_type: min_k_logit
+  lr_backbone: 7.0e-05
+  lr_head: 0.0015
+  encoder_unfreeze_epoch: 0
+  weight_decay: 0.005
+trainer:
+  max_epochs: 50
+  default_root_dir: artifacts
+  accelerator: gpu
+  devices: 1
+  precision: 16-mixed
+  log_every_n_steps: 5
+  gradient_clip_val: 1.0
+  callbacks:
+  - class_path: pytorch_lightning.callbacks.EarlyStopping
+    init_args:
+      monitor: val_loss
+      patience: 10
+      mode: min
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      monitor: val_loss
+      save_top_k: 1
+      mode: min
+      filename: joint-{epoch:02d}-{val_loss:.4f}
+logger:
+  project: adlr
+  entity: ADLR2025
+  name: joint_regression_mdn
+train:
+  seed: 42
