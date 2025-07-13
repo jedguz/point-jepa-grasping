@@ -36,6 +36,7 @@ class JointRegressor(pl.LightningModule):
         tokenizer_groups: int,
         tokenizer_group_size: int,
         tokenizer_radius: float,
+        transformations: list[str],
         encoder_dim: int,
         encoder_depth: int,
         encoder_heads: int,
@@ -64,6 +65,13 @@ class JointRegressor(pl.LightningModule):
         self.lr_head     = lr_head
         self.weight_decay = weight_decay
         self.encoder_unfreeze_epoch = encoder_unfreeze_epoch
+
+        if transformations[0] != "none":
+            self.train_transformations = transforms.Compose(
+                [self.build_transformation(name) for name in transformations]
+            )
+        else:
+            self.train_transformations = transformations
 
         # ---------------- tokenizer --------------------------
         self.tokenizer = PointcloudTokenizer(
@@ -117,15 +125,21 @@ class JointRegressor(pl.LightningModule):
             raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
                         f"basic, min_k, attention, min_k_logit, full")
         
+        # uncomment if don't want to learn
+        #if self.loss_type in ["min_k_logit", "full"]:
+        #    self.logit_scale = nn.Parameter(torch.tensor(0.15)) 
+
+        # learn the logit loss caling parameter
         if self.loss_type in ["min_k_logit", "full"]:
-            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.2, dtype=torch.float32)))
+            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.12, dtype=torch.float32)))
 
         mlp: list[nn.Module] = []
         for i in range(len(dims) - 2):
             mlp.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
         mlp.append(nn.Linear(dims[-2], dims[-1]))
         self.head = nn.Sequential(*mlp)
-
+    
+    # add the property outside of init
     @property
     def logit_scale(self):
         return self.logit_scale_raw.exp().clamp(0.01, 6.0)
@@ -200,8 +214,7 @@ class JointRegressor(pl.LightningModule):
                         f"basic, min_k, attention, min_k_logit, full")
 
         self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=gt.size(0))
-        if hasattr(self, "logit_scale_raw"):
-            self.log(f"{stage}_logit_scale_raw", self.logit_scale_raw.item(), prog_bar=True)
+        if hasattr(self, "logit_scale_raw"): # only logs if the param is learned, via the logit_scale_raw
             self.log(f"{stage}_logit_scale", self.logit_scale.item(), prog_bar=True)
 
         return loss
@@ -218,17 +231,15 @@ class JointRegressor(pl.LightningModule):
         )
         head_params = list(self.pool.parameters()) + list(self.head.parameters())
 
-        scale_params = []
-        if hasattr(self, "logit_scale"):
+        scale_params = [self.pe_scale]
+        if hasattr(self, "logit_scale_raw"): # only train if the param is learned, via the logit_scale_raw
             scale_params.append(self.logit_scale_raw)
-        if hasattr(self, "pe_scale"):
-            scale_params.append(self.pe_scale)
 
         optimizer = torch.optim.AdamW(
             [
                 {"params": backbone_params, "lr": self.hparams.lr_backbone},
                 {"params": head_params,     "lr": self.hparams.lr_head},
-                {"params": scale_params,    "lr": self.hparams.lr_backbone}
+                {"params": scale_params,    "lr": 2 * self.hparams.lr_backbone}
             ],
             weight_decay=self.hparams.weight_decay,
         )
@@ -245,10 +256,24 @@ class JointRegressor(pl.LightningModule):
             return 0.5 * (1.0 + math.cos(math.pi * progress))
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}, "gradient_clip_val": 1.0}
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
     
-    
-    # ---------- DEBUG SECTION ----------
+    # ---------- TRANSFORMATIONS ON POINT CLOUD ---------
+    def build_transformation(self, name: str) -> transforms.Transform:
+        if name == "subsample":
+            return transforms.PointcloudSubsampling(1024)
+        elif name == "center":
+            return transforms.PointcloudCentering()
+        elif name == "unit_sphere":
+            return transforms.PointcloudUnitSphere()
+        elif name == "rotate":
+            return transforms.PointcloudRotation(
+                dims=[1], deg=None
+            )
+        else:
+            raise RuntimeError(f"No such transformation: {name}")
+
+    # ---------- DEBUG SECTION --------------------------
     def on_after_backward(self) -> None:
         """Runs every time Lightning has done loss.backward()."""
         if self.global_step > 0:                      # only once
@@ -278,7 +303,7 @@ class JointRegressor(pl.LightningModule):
             )
             self.print(f"[WEIGHT-CHK] Σ|Δw_encoder| after 1 step = {delta:.3e}")
             del self._enc_before            # keep RAM clean
-    # ---------- END DEBUG ----------
+    # ---------- END DEBUG -------------------------------------
 
 
     # ------------------------------------------- unfreeze hook

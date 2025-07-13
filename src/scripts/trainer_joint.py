@@ -60,6 +60,7 @@ def main(cfg: DictConfig) -> None:
         tokenizer_groups     = cfg.model.tokenizer_groups,
         tokenizer_group_size = cfg.model.tokenizer_group_size,
         tokenizer_radius     = cfg.model.tokenizer_radius,
+        transformations      = cfg.model.transformations,
         encoder_dim          = cfg.model.encoder_dim,
         encoder_depth        = cfg.model.encoder_depth,
         encoder_heads        = cfg.model.encoder_heads,
