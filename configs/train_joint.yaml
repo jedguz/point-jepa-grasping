@@ -18,7 +18,7 @@ data:
   preload_all: true     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
-  split_file: configs/splits/split_10.json   # ← choose 10 / 25 / 50 / 100
+  split_file: configs/splits/split_50.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    64
   num_workers:   4
   num_points:    1024
@@ -48,14 +48,14 @@ model:
   num_pred:              5
   loss_type:             min_k_logit # choose between basic, min_k, min_k_logit, full
 
-  lr_backbone:           8e-5        # 0 = frozen
-  lr_head:               2e-3        # 3e-3 for a basic loss
+  lr_backbone:           7e-5        # 0 = frozen
+  lr_head:               1.5e-3        # 3e-3 for a basic loss
   encoder_unfreeze_epoch: 0
   weight_decay:          0.005          # AdamW weight-decay
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:
-  max_epochs: 20
+  max_epochs: 50
   default_root_dir: artifacts
   accelerator: gpu
   devices: 1

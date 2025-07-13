@@ -131,7 +131,7 @@ class JointRegressor(pl.LightningModule):
 
         # learn the logit loss caling parameter
         if self.loss_type in ["min_k_logit", "full"]:
-            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.12, dtype=torch.float32)))
+            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.1, dtype=torch.float32)))
 
         mlp: list[nn.Module] = []
         for i in range(len(dims) - 2):
@@ -239,7 +239,7 @@ class JointRegressor(pl.LightningModule):
             [
                 {"params": backbone_params, "lr": self.hparams.lr_backbone},
                 {"params": head_params,     "lr": self.hparams.lr_head},
-                {"params": scale_params,    "lr": 2 * self.hparams.lr_backbone}
+                {"params": scale_params,    "lr": 1e-4}
             ],
             weight_decay=self.hparams.weight_decay,
         )
