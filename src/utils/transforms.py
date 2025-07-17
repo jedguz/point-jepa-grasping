@@ -4,6 +4,9 @@ import torch
 from pytorch3d.ops import sample_farthest_points
 from pytorch3d.ops.utils import masked_gather
 from pytorch3d.transforms import euler_angles_to_matrix
+from pytorch3d.transforms import quaternion_to_matrix
+from pytorch3d.transforms import Transform3d
+
 from torch import nn
 
 Transform = Callable[[torch.Tensor], torch.Tensor]
@@ -217,6 +220,26 @@ class PointcloudRotation(nn.Module):
                 euler_angles[dim] = (2 * torch.pi) * torch.rand(1) - torch.pi
         R = euler_angles_to_matrix(euler_angles, "XYZ").to(points.device)
         points[:, :, :3] = points[:, :, :3] @ R.T
+        return points
+
+
+class PointcloudCoordChange(nn.Module):
+    def __init__(self, pose_vec: torch.Tensor):
+        super().__init__()
+        # pose_vec: (B, 7) where each row is [tx, ty, tz, qw, qx, qy, qz]
+        self.pose_vec = pose_vec
+
+    def forward(self, points: torch.Tensor):
+        # points: (B, N, 3)
+
+        t = self.pose_vec[:, :3]  # (B, 3) - translation
+        quat = self.pose_vec[:, 3:7]  # (B, 4) - quaternion [qw, qx, qy, qz]
+        R = quaternion_to_matrix(quat).to(points.device)  # (B, 3, 3)
+        
+        transform = Transform3d(device=points.device).rotate(R).translate(t)
+        inverse_transform = transform.inverse()
+
+        points = inverse_transform.transform_points(points)
         return points
 
 

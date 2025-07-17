@@ -37,6 +37,7 @@ class JointRegressor(pl.LightningModule):
         tokenizer_group_size: int,
         tokenizer_radius: float,
         transformations: list[str],
+        coord_change: bool,
         encoder_dim: int,
         encoder_depth: int,
         encoder_heads: int,
@@ -59,6 +60,7 @@ class JointRegressor(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(ignore=["head_hidden_dims"])
 
+        self.coord_change = coord_change
         self.num_pred = num_pred           
         self.loss_type = loss_type
         self.lr_backbone = lr_backbone
@@ -118,12 +120,22 @@ class JointRegressor(pl.LightningModule):
         elif self.loss_type == "min_k":
             dims   = [in_dim] + head_hidden_dims + [12 * num_pred]
         elif self.loss_type == "min_k_logit":
-            dims   = [in_dim] + head_hidden_dims + [12 * (num_pred + 1)]
+            dims   = [in_dim] + head_hidden_dims + [13 * num_pred]
         elif self.loss_type == "full":
-            dims   = [in_dim] + head_hidden_dims + [12 * (num_pred + 2)]
+            dims   = [in_dim] + head_hidden_dims + [14 * num_pred]
         else:
             raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
                         f"basic, min_k, attention, min_k_logit, full")
+        
+        # Print network architecture
+        print(f"\n{'='*50}")
+        print(f"MLP Head Architecture (loss_type: {self.loss_type})")
+        print(f"{'='*50}")
+        print(f"Input dimension: {in_dim}")
+        print(f"Hidden dimensions: {head_hidden_dims}")
+        print(f"Output dimension: {dims[-1]}")
+        print(f"\nLayer-by-layer breakdown:")
+        print(f"{'-'*50}")
         
         # uncomment if don't want to learn
         #if self.loss_type in ["min_k_logit", "full"]:
@@ -131,18 +143,29 @@ class JointRegressor(pl.LightningModule):
 
         # learn the logit loss caling parameter
         if self.loss_type in ["min_k_logit", "full"]:
-            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.1, dtype=torch.float32)))
+            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(2, dtype=torch.float32)))
 
         mlp: list[nn.Module] = []
+        layer_num = 1
+
         for i in range(len(dims) - 2):
             mlp.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
+            print(f"Layer {layer_num:2d}: Linear({dims[i]:4d} -> {dims[i + 1]:4d}) + ReLU")
+            layer_num += 1
+
         mlp.append(nn.Linear(dims[-2], dims[-1]))
+        
+        print(f"Layer {layer_num:2d}: Linear({dims[-2]:4d} -> {dims[-1]:4d}) [Output]")
+        print(f"{'-'*50}")
+        print(f"Total layers: {layer_num}")
+        print(f"{'='*50}\n")
+
         self.head = nn.Sequential(*mlp)
-    
+
     # add the property outside of init
     @property
     def logit_scale(self):
-        return self.logit_scale_raw.exp().clamp(0.01, 6.0)
+        return self.logit_scale_raw.exp().clamp(0.1, 10.0)
     
     # ------------------------------------------------ forward
     @torch.cuda.amp.autocast(enabled=True)
@@ -189,13 +212,16 @@ class JointRegressor(pl.LightningModule):
             loss = per_h.min(-1).values.mean()  
 
         elif self.loss_type == "min_k_logit":
-            pred_angles, pred_logit  = self(batch["points"], batch["pose"]) # (B,num_pred,12), (B,12)
+            pred_angles, pred_logit  = self(batch["points"], batch["pose"]) # (B,num_pred,12), (B,num_pred)
             gt    = batch["joints"].unsqueeze(1)                            # (B,1,12)          
             per_h = (pred_angles - gt).pow(2).mean(-1) 
-            min_indices = torch.argmin(per_h, dim=1)
-
+            soft_targets = F.softmax(-per_h, dim=1)            # (B, num_pred)
+            log_probs = F.log_softmax(pred_logit, dim=1)       # (B, num_pred)
+            loss_logit = F.kl_div(log_probs, soft_targets, reduction="batchmean")
+            
             loss_angles = per_h.min(-1).values.mean()  
-            loss_logit = F.cross_entropy(pred_logit, min_indices)
+            # min_indices = torch.argmin(per_h, dim=1)
+            # loss_logit = F.cross_entropy(pred_logit, min_indices)
             loss = loss_angles + self.logit_scale * loss_logit
 
         elif self.loss_type == "full":
@@ -213,6 +239,8 @@ class JointRegressor(pl.LightningModule):
             raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
                         f"basic, min_k, attention, min_k_logit, full")
 
+        self.log(f"{stage}_loss_angles", loss_angles, prog_bar=True, batch_size=gt.size(0))
+        self.log(f"{stage}_loss_logit", loss_logit, prog_bar=True, batch_size=gt.size(0))
         self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=gt.size(0))
         if hasattr(self, "logit_scale_raw"): # only logs if the param is learned, via the logit_scale_raw
             self.log(f"{stage}_logit_scale", self.logit_scale.item(), prog_bar=True)

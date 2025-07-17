@@ -18,7 +18,7 @@ data:
   preload_all: true     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
-  split_file: configs/splits/split_50.json   # ← choose 10 / 25 / 50 / 100
+  split_file: configs/splits/split_10.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    64
   num_workers:   4
   num_points:    1024
@@ -31,6 +31,7 @@ model:
   tokenizer_radius:      0.05
 
   transformations:       [none]
+  coord_change:          False
 
   encoder_dim:           384 # this is fixed by the backbone
   encoder_depth:         12
@@ -44,18 +45,18 @@ model:
   pooling_heads:         4
   pooling_dropout:       0.0
 
-  head_hidden_dims:      [512, 256, 128, 12]
   num_pred:              5
+  head_hidden_dims:      [320, 240, 160, 100] 
   loss_type:             min_k_logit # choose between basic, min_k, min_k_logit, full
 
   lr_backbone:           7e-5        # 0 = frozen
-  lr_head:               1.5e-3        # 3e-3 for a basic loss
+  lr_head:               1e-3        # 3e-3 for a basic loss
   encoder_unfreeze_epoch: 0
   weight_decay:          0.005          # AdamW weight-decay
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:
-  max_epochs: 50
+  max_epochs: 10
   default_root_dir: artifacts
   accelerator: gpu
   devices: 1
@@ -83,7 +84,7 @@ trainer:
 logger:
   project: adlr
   entity: ADLR2025
-  name: joint_regression_mdn
+  name: coordinate_change
 
 # ─── misc ───────────────────────────────────────────────────
 train:
