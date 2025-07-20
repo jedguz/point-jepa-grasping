@@ -80,6 +80,9 @@ def main(cfg: DictConfig) -> None:
         encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
         num_pred               = cfg.model.num_pred,
         loss_type              = cfg.model.loss_type,
+        logit_scale_init       = cfg.model.logit_scale_init,
+        logit_scale_min        = cfg.model.logit_scale_min,
+        logit_scale_max        = cfg.model.logit_scale_max,
     )
 
     print("\n ---LOAD THE JEPA CHECKPOINT---: \n")

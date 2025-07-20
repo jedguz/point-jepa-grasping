@@ -50,9 +50,12 @@ class JointRegressor(pl.LightningModule):
         encoder_unfreeze_epoch: int = 0,
         num_pred: int = 5,
         loss_type: str = "min_k_logit",
+        logit_scale_init: float = 0.1,  
+        logit_scale_min:  float = 0.01,
+        logit_scale_max:  float = 6.0,   
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["head_hidden_dims"])
+        self.save_hyperparameters()
 
         self.coord_change            = coord_change
         self.num_pred                = num_pred
@@ -126,7 +129,9 @@ class JointRegressor(pl.LightningModule):
 
         # learnable scale on the logit/KL term
         if loss_type in {"min_k_logit", "full"}:
-            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.1)))
+            self.logit_scale_raw = nn.Parameter(torch.log(
+            torch.tensor(logit_scale_init)
+        ))
 
         # -------- data‑space transforms (optional)------------
         if transformations[0] != "none":
@@ -139,7 +144,10 @@ class JointRegressor(pl.LightningModule):
     # convenience property
     @property
     def logit_scale(self) -> torch.Tensor:
-        return self.logit_scale_raw.exp().clamp(0.05, 5.0)
+        return self.logit_scale_raw.exp().clamp(
+            self.hparams.logit_scale_min,
+            self.hparams.logit_scale_max
+        )
 
     # ------------------------------------------------ forward
     @torch.cuda.amp.autocast(enabled=True)
@@ -192,15 +200,14 @@ class JointRegressor(pl.LightningModule):
 
         elif self.loss_type == "min_k_logit":
             angles, logits = self(batch["points"], batch["pose"])
-            gt = batch["joints"].unsqueeze(1)
-            per_h = (angles - gt).pow(2).mean(-1)                  # (B,k)
+            gt = batch["joints"].unsqueeze(1)                       # (B,1,12)
+            per_h = (angles - gt).pow(2).mean(-1)                   # (B,k)
 
-            soft_tgt  = F.softmax(-per_h, dim=1)                   # (B,k)
-            log_probs = F.log_softmax(logits, dim=1)               # (B,k)
+            min_idx = torch.argmin(per_h, dim=1)                    # hard label ∈ {0…k‑1}
 
             loss_terms["angles"] = per_h.min(-1).values.mean()
-            loss_terms["logit"]  = self.logit_scale * F.kl_div(log_probs, soft_tgt,
-                                                               reduction="batchmean")
+            loss_terms["logit"]  = self.logit_scale * F.cross_entropy(logits, min_idx)
+
 
         elif self.loss_type == "full":
             angles, logits, scores = self(batch["points"], batch["pose"])

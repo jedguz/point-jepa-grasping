@@ -18,7 +18,7 @@ data:
   preload_all: true     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
-  split_file: configs/splits/split_10.json   # ← choose 10 / 25 / 50 / 100
+  split_file: configs/splits/split_50.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    64
   num_workers:   4
   num_points:    1024
@@ -43,14 +43,19 @@ model:
 
   pooling_type:          att
   pooling_heads:         4
-  pooling_dropout:       0.05
+  pooling_dropout:       0.00
 
   num_pred:              5
-  head_hidden_dims:      [256, 128, 128]
+  head_hidden_dims:      [512, 256, 128]
   loss_type:             min_k_logit # choose between basic, min_k, min_k_logit, full
 
+  # NEW: logit‑scale hyper‑params
+  logit_scale_init: 0.1   # classic 0.1  (set to 0.01 to nearly disable CE)
+  logit_scale_min:  0.01  # classic 0.01
+  logit_scale_max:  6.0   # classic 6.0  (rarely reached)
+
   lr_backbone:           7e-5        # 0 = frozen
-  lr_head:               1e-3        # 3e-3 for a basic loss
+  lr_head:               1.5e-3        # 3e-3 for a basic loss
   encoder_unfreeze_epoch: 0
   weight_decay:          0.005          # AdamW weight-decay
 
