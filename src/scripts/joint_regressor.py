@@ -1,34 +1,28 @@
 #!/usr/bin/env python3
 """
-JointRegressor – predicts the 12-D finger configuration given
-  • an object point cloud
-  • a 7-D hand pose (translation + quaternion)
+JointRegressor – predicts the 12‑D hand‑joint configuration from
+ • an object point cloud
+ • a 7‑D hand pose (translation + quaternion)
 
-The class now supports Point-JEPA fine-tuning:
-  • backbone starts frozen and is unfrozen at `encoder_unfreeze_epoch`
-  • separate LR groups for backbone vs. head
-  • Linear-warm-up + cosine LR schedule (pl-bolts)
-  • learnable scalar on positional encodings
+Supports Point‑JEPA fine‑tuning, multi‑hypothesis (k‑best) outputs and an
+optional coordinate change that expresses the pose in the object‑centred frame.
 """
 
 from __future__ import annotations
-import numpy as np
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
-import math
-
 
 from modules.tokenizer   import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
-from utils import transforms
+from utils               import transforms
 from scripts.pooling     import get_pooling
 
 
-
 class JointRegressor(pl.LightningModule):
-    # ----------------------------------------------------- init
+    # --------------------------------------------------------- init
     def __init__(
         self,
         *,
@@ -54,26 +48,16 @@ class JointRegressor(pl.LightningModule):
         lr_head: float = 3e-3,
         weight_decay: float = 1e-2,
         encoder_unfreeze_epoch: int = 0,
-        num_pred: int = 5,                            
-        loss_type: str = "basic",
+        num_pred: int = 5,
+        loss_type: str = "min_k_logit",
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["head_hidden_dims"])
 
-        self.coord_change = coord_change
-        self.num_pred = num_pred           
-        self.loss_type = loss_type
-        self.lr_backbone = lr_backbone
-        self.lr_head     = lr_head
-        self.weight_decay = weight_decay
-        self.encoder_unfreeze_epoch = encoder_unfreeze_epoch
-
-        if transformations[0] != "none":
-            self.train_transformations = transforms.Compose(
-                [self.build_transformation(name) for name in transformations]
-            )
-        else:
-            self.train_transformations = transformations
+        self.coord_change            = coord_change
+        self.num_pred                = num_pred
+        self.loss_type               = loss_type
+        self.encoder_unfreeze_epoch  = encoder_unfreeze_epoch
 
         # ---------------- tokenizer --------------------------
         self.tokenizer = PointcloudTokenizer(
@@ -89,7 +73,7 @@ class JointRegressor(pl.LightningModule):
             nn.GELU(),
             nn.Linear(128, encoder_dim),
         )
-        self.pe_scale = nn.Parameter(torch.tensor(0.3))  # learnable
+        self.pe_scale = nn.Parameter(torch.tensor(0.3))
 
         # ---------------- transformer backbone ---------------
         dpr = torch.linspace(0, encoder_drop_path_rate, encoder_depth).tolist()
@@ -112,22 +96,19 @@ class JointRegressor(pl.LightningModule):
             dropout=pooling_dropout,
         )
 
-        # ------------------- head --------------------------
+        # ------------------- head ----------------------------
         in_dim = encoder_dim + pose_dim
 
-        if self.loss_type == "basic":
-            dims   = [in_dim] + head_hidden_dims + [12]
-        elif self.loss_type == "min_k":
-            dims   = [in_dim] + head_hidden_dims + [12 * num_pred]
-        elif self.loss_type == "min_k_logit":
-            dims   = [in_dim] + head_hidden_dims + [13 * num_pred]
-        elif self.loss_type == "full":
-            dims   = [in_dim] + head_hidden_dims + [14 * num_pred]
+        if   loss_type == "basic":        out_dim = 12
+        elif loss_type == "min_k":        out_dim = 12 * num_pred
+        elif loss_type == "min_k_logit":  out_dim = (12 + 1) * num_pred   # k·(12+1)
+        elif loss_type == "full":         out_dim = (12 + 2) * num_pred   # k·(12+2)
         else:
-            raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
-                        f"basic, min_k, attention, min_k_logit, full")
-        
-        # Print network architecture
+            raise ValueError(f"Unknown loss type '{loss_type}'.")
+
+        dims = [in_dim] + head_hidden_dims + [out_dim]
+
+                # Print network architecture
         print(f"\n{'='*50}")
         print(f"MLP Head Architecture (loss_type: {self.loss_type})")
         print(f"{'='*50}")
@@ -136,121 +117,117 @@ class JointRegressor(pl.LightningModule):
         print(f"Output dimension: {dims[-1]}")
         print(f"\nLayer-by-layer breakdown:")
         print(f"{'-'*50}")
-        
-        # uncomment if don't want to learn
-        #if self.loss_type in ["min_k_logit", "full"]:
-        #    self.logit_scale = nn.Parameter(torch.tensor(0.15)) 
-
-        # learn the logit loss caling parameter
-        if self.loss_type in ["min_k_logit", "full"]:
-            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(2, dtype=torch.float32)))
 
         mlp: list[nn.Module] = []
-        layer_num = 1
-
         for i in range(len(dims) - 2):
             mlp.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
-            print(f"Layer {layer_num:2d}: Linear({dims[i]:4d} -> {dims[i + 1]:4d}) + ReLU")
-            layer_num += 1
-
         mlp.append(nn.Linear(dims[-2], dims[-1]))
-        
-        print(f"Layer {layer_num:2d}: Linear({dims[-2]:4d} -> {dims[-1]:4d}) [Output]")
-        print(f"{'-'*50}")
-        print(f"Total layers: {layer_num}")
-        print(f"{'='*50}\n")
-
         self.head = nn.Sequential(*mlp)
 
-    # add the property outside of init
+        # learnable scale on the logit/KL term
+        if loss_type in {"min_k_logit", "full"}:
+            self.logit_scale_raw = nn.Parameter(torch.log(torch.tensor(0.1)))
+
+        # -------- data‑space transforms (optional)------------
+        if transformations[0] != "none":
+            self.train_transformations = transforms.Compose(
+                [self.build_transformation(n) for n in transformations]
+            )
+        else:
+            self.train_transformations = transformations
+
+    # convenience property
     @property
-    def logit_scale(self):
-        return self.logit_scale_raw.exp().clamp(0.1, 10.0)
-    
+    def logit_scale(self) -> torch.Tensor:
+        return self.logit_scale_raw.exp().clamp(0.05, 5.0)
+
     # ------------------------------------------------ forward
     @torch.cuda.amp.autocast(enabled=True)
-    def forward(self, points: torch.Tensor, pose_vec: torch.Tensor) -> torch.Tensor:
+    def forward(self, points: torch.Tensor, pose_vec: torch.Tensor):
         tokens, centers = self.tokenizer(points)
         pos   = self.positional_encoding(centers) * self.pe_scale
         feats = self.encoder(tokens, pos).last_hidden_state
         obj_emb = self.pool(feats)
-        fused   = torch.cat([obj_emb, pose_vec], dim=-1)
-        pred    = self.head(fused)                 
+
+        if self.coord_change:
+            pose_vec = pose_vec.clone()
+            pose_vec[:, :3] -= centers.mean(dim=1)      # shift to object frame
+
+        fused = torch.cat([obj_emb, pose_vec], dim=-1)
+        pred  = self.head(fused)                        # (B, out_dim)
+
         pred_dim = self.num_pred * 12
-        
-        if self.loss_type == "basic":
-            pred_angles = pred  # (B,12)
-            return pred_angles 
-        elif self.loss_type == "min_k":
-            pred_angles = pred.view(-1, self.num_pred, 12) # (B,num_pred,12)
-            return pred_angles
-        elif self.loss_type == "min_k_logit":
-            pred_angles = pred[:, :pred_dim].view(-1, self.num_pred, 12) # (B,num_pred,12)
-            pred_logit = pred[:, pred_dim:]                              # (B,num_pred)
-            return pred_angles, pred_logit
-        elif self.loss_type == "full":
-            pred_angles = pred[:, :pred_dim].view(-1, self.num_pred, 12) # (B,num_pred,12)
-            pred_logit = pred[:, pred_dim : (pred_dim + self.num_pred)]  # (B,num_pred)
-            pred_score = pred[:, (pred_dim + self.num_pred) : ]          # (B,num_pred)
-            return pred_angles, pred_logit, pred_score
-        else:
-            raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
-                        f"basic, min_k, attention, min_k_logit, full")
 
-    # ------------------------------------------- train / val
+        if self.loss_type == "basic":
+            return pred                                   # (B,12)
+
+        if self.loss_type == "min_k":
+            return pred.view(-1, self.num_pred, 12)       # (B,k,12)
+
+        if self.loss_type == "min_k_logit":
+            angles = pred[:, :pred_dim].view(-1, self.num_pred, 12)
+            logits = pred[:, pred_dim:].view(-1, self.num_pred)
+            return angles, logits
+
+        # full
+        angles = pred[:, :pred_dim].view(-1, self.num_pred, 12)
+        logits = pred[:, pred_dim : pred_dim + self.num_pred]
+        scores = pred[:, pred_dim + self.num_pred :].view(-1, self.num_pred)
+        return angles, logits, scores
+
+    # -------------------------------------- training / val
     def _step(self, batch, stage: str):
-        if self.loss_type == "basic":
-            pred = self(batch["points"], batch["pose"]) 
+        loss_terms = {}
+        B = batch["points"].size(0)
 
-            loss = F.mse_loss(pred, batch["joints"])
+        if self.loss_type == "basic":
+            pred = self(batch["points"], batch["pose"])
+            loss_terms["angles"] = F.mse_loss(pred, batch["joints"])
 
         elif self.loss_type == "min_k":
-            pred_angles  = self(batch["points"], batch["pose"])  # (B,num_pred,12)
-            gt    = batch["joints"].unsqueeze(1)                 # (B,1,12)         
-            per_h = (pred_angles - gt).pow(2).mean(-1) 
-
-            loss = per_h.min(-1).values.mean()  
+            angles = self(batch["points"], batch["pose"])          # (B,k,12)
+            gt = batch["joints"].unsqueeze(1)                      # (B,1,12)
+            per_h = (angles - gt).pow(2).mean(-1)                  # (B,k)
+            loss_terms["angles"] = per_h.min(-1).values.mean()
 
         elif self.loss_type == "min_k_logit":
-            pred_angles, pred_logit  = self(batch["points"], batch["pose"]) # (B,num_pred,12), (B,num_pred)
-            gt    = batch["joints"].unsqueeze(1)                            # (B,1,12)          
-            per_h = (pred_angles - gt).pow(2).mean(-1) 
-            soft_targets = F.softmax(-per_h, dim=1)            # (B, num_pred)
-            log_probs = F.log_softmax(pred_logit, dim=1)       # (B, num_pred)
-            loss_logit = F.kl_div(log_probs, soft_targets, reduction="batchmean")
-            
-            loss_angles = per_h.min(-1).values.mean()  
-            # min_indices = torch.argmin(per_h, dim=1)
-            # loss_logit = F.cross_entropy(pred_logit, min_indices)
-            loss = loss_angles + self.logit_scale * loss_logit
+            angles, logits = self(batch["points"], batch["pose"])
+            gt = batch["joints"].unsqueeze(1)
+            per_h = (angles - gt).pow(2).mean(-1)                  # (B,k)
+
+            soft_tgt  = F.softmax(-per_h, dim=1)                   # (B,k)
+            log_probs = F.log_softmax(logits, dim=1)               # (B,k)
+
+            loss_terms["angles"] = per_h.min(-1).values.mean()
+            loss_terms["logit"]  = self.logit_scale * F.kl_div(log_probs, soft_tgt,
+                                                               reduction="batchmean")
 
         elif self.loss_type == "full":
-            pred_angles, pred_logit, pred_score  = self(batch["points"], batch["pose"]) 
-            gt    = batch["joints"].unsqueeze(1)                            # (B,1,12)
-            per_h = (pred_angles - gt).pow(2).mean(-1) 
-            min_indices = torch.argmin(per_h, dim=1)
+            angles, logits, scores = self(batch["points"], batch["pose"])
+            gt = batch["joints"].unsqueeze(1)
+            per_h = (angles - gt).pow(2).mean(-1)
 
-            loss_angles = per_h.min(-1).values.mean()  
-            loss_logit = F.cross_entropy(pred_logit, min_indices)
-            loss_score = F.mse_loss(pred_score, batch["meta"]["score"].unsqueeze(1).expand(-1, self.num_pred))
-            loss = loss_angles + 0.1 * loss_score + self.logit_scale * loss_logit
+            min_idx = torch.argmin(per_h, dim=1)
+            loss_terms["angles"] = per_h.min(-1).values.mean()
+            loss_terms["logit"]  = self.logit_scale * F.cross_entropy(logits, min_idx)
+            loss_terms["score"]  = 0.1 * F.mse_loss(
+                scores, batch["meta"]["score"].unsqueeze(1).expand(-1, self.num_pred)
+            )
 
-        else:
-            raise ValueError(f"Unknown loss type '{self.loss_type}'. Available types: "
-                        f"basic, min_k, attention, min_k_logit, full")
-
-        self.log(f"{stage}_loss_angles", loss_angles, prog_bar=True, batch_size=gt.size(0))
-        self.log(f"{stage}_loss_logit", loss_logit, prog_bar=True, batch_size=gt.size(0))
-        self.log(f"{stage}_loss", loss, prog_bar=True, batch_size=gt.size(0))
-        if hasattr(self, "logit_scale_raw"): # only logs if the param is learned, via the logit_scale_raw
+        # unified logging
+        total = 0.0
+        for k, v in loss_terms.items():
+            self.log(f"{stage}_loss_{k}", v, prog_bar=True, batch_size=B)
+            total += v
+        self.log(f"{stage}_loss", total, prog_bar=True, batch_size=B)
+        if hasattr(self, "logit_scale_raw"):
             self.log(f"{stage}_logit_scale", self.logit_scale.item(), prog_bar=True)
+        return total
 
-        return loss
-
-    def training_step(self, batch, _): return self._step(batch, "train")
+    def training_step  (self, batch, _): return self._step(batch, "train")
     def validation_step(self, batch, _): self._step(batch, "val")
 
-    # ----------------------------------------------- optimiser
+    # -------------------------------------- optimiser
     def configure_optimizers(self):
         backbone_params = (
             list(self.tokenizer.parameters()) +
@@ -260,47 +237,38 @@ class JointRegressor(pl.LightningModule):
         head_params = list(self.pool.parameters()) + list(self.head.parameters())
 
         scale_params = [self.pe_scale]
-        if hasattr(self, "logit_scale_raw"): # only train if the param is learned, via the logit_scale_raw
+        if hasattr(self, "logit_scale_raw"):
             scale_params.append(self.logit_scale_raw)
 
-        optimizer = torch.optim.AdamW(
+        optim = torch.optim.AdamW(
             [
                 {"params": backbone_params, "lr": self.hparams.lr_backbone},
                 {"params": head_params,     "lr": self.hparams.lr_head},
-                {"params": scale_params,    "lr": 1e-4}
+                {"params": scale_params,    "lr": 1e-4},
             ],
             weight_decay=self.hparams.weight_decay,
         )
 
-        # simple cosine schedule with warm-up via LambdaLR
+        # cosine LR with warm‑up
         def lr_lambda(step):
-            warmup_steps = 10 * self.trainer.num_training_batches
-            if step < warmup_steps:
-                return float(step) / float(max(1, warmup_steps))
-            # after warmup, cosine decay
-            progress = (step - warmup_steps) / float(
-                max(1, self.trainer.max_steps - warmup_steps)
-            )
+            warmup = 10 * self.trainer.num_training_batches
+            if step < warmup:
+                return step / max(1, warmup)
+            progress = (step - warmup) / max(1, self.trainer.max_steps - warmup)
             return 0.5 * (1.0 + math.cos(math.pi * progress))
 
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
-    
-    # ---------- TRANSFORMATIONS ON POINT CLOUD ---------
-    def build_transformation(self, name: str) -> transforms.Transform:
-        if name == "subsample":
-            return transforms.PointcloudSubsampling(1024)
-        elif name == "center":
-            return transforms.PointcloudCentering()
-        elif name == "unit_sphere":
-            return transforms.PointcloudUnitSphere()
-        elif name == "rotate":
-            return transforms.PointcloudRotation(
-                dims=[1], deg=None
-            )
-        else:
-            raise RuntimeError(f"No such transformation: {name}")
+        sched = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda)
+        return {"optimizer": optim,
+                "lr_scheduler": {"scheduler": sched, "interval": "step"}}
 
+    # ---------- transformations for point clouds ----------
+    @staticmethod
+    def build_transformation(name: str) -> transforms.Transform:
+        if   name == "subsample":   return transforms.PointcloudSubsampling(1024)
+        elif name == "center":      return transforms.PointcloudCentering()
+        elif name == "unit_sphere": return transforms.PointcloudUnitSphere()
+        elif name == "rotate":      return transforms.PointcloudRotation(dims=[1])
+        else: raise RuntimeError(f"No such transformation: {name}")
     # ---------- DEBUG SECTION --------------------------
     def on_after_backward(self) -> None:
         """Runs every time Lightning has done loss.backward()."""
@@ -332,17 +300,14 @@ class JointRegressor(pl.LightningModule):
             self.print(f"[WEIGHT-CHK] Σ|Δw_encoder| after 1 step = {delta:.3e}")
             del self._enc_before            # keep RAM clean
     # ---------- END DEBUG -------------------------------------
-
-
-    # ------------------------------------------- unfreeze hook
-    def on_train_start(self) -> None:
-        if self.hparams.encoder_unfreeze_epoch > 0:
+    # --------------- freeze / unfreeze hooks --------------
+    def on_train_start(self):
+        if self.encoder_unfreeze_epoch > 0:
             for m in (self.tokenizer, self.positional_encoding, self.encoder):
                 m.requires_grad_(False)
 
-    def on_train_epoch_start(self) -> None:
-        if self.current_epoch == self.hparams.encoder_unfreeze_epoch:
+    def on_train_epoch_start(self):
+        if self.current_epoch == self.encoder_unfreeze_epoch:
             self.print(">> Unfreezing backbone")
             for m in (self.tokenizer, self.positional_encoding, self.encoder):
                 m.requires_grad_(True)
-

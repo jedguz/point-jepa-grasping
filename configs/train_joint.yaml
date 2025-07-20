@@ -31,7 +31,7 @@ model:
   tokenizer_radius:      0.05
 
   transformations:       [none]
-  coord_change:          False
+  coord_change:          False  # set True to express pose in object frame
 
   encoder_dim:           384 # this is fixed by the backbone
   encoder_depth:         12
@@ -43,10 +43,10 @@ model:
 
   pooling_type:          att
   pooling_heads:         4
-  pooling_dropout:       0.0
+  pooling_dropout:       0.05
 
   num_pred:              5
-  head_hidden_dims:      [320, 240, 160, 100] 
+  head_hidden_dims:      [256, 128, 128]
   loss_type:             min_k_logit # choose between basic, min_k, min_k_logit, full
 
   lr_backbone:           7e-5        # 0 = frozen
