@@ -11,6 +11,7 @@ ckpt:
   filename: ""
   bucket: adlr2025-pointclouds       # GCS bucket
   local_dir: checkpoints             # local cache dir
+  load_backbone: true    # set to true to load pre-trained backbone
   backbone_filename: pretrain_pointjepa_epoch=499-step=40500.ckpt  # remove for training from scratch
 
 # ─── data module ────────────────────────────────────────────
@@ -18,7 +19,7 @@ data:
   preload_all: true     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
-  split_file: configs/splits/split_50.json   # ← choose 10 / 25 / 50 / 100
+  split_file: configs/splits/split_10.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    64
   num_workers:   4
   num_points:    1024
@@ -61,7 +62,7 @@ model:
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:
-  max_epochs: 10
+  max_epochs: 20
   default_root_dir: artifacts
   accelerator: gpu
   devices: 1
@@ -89,7 +90,7 @@ trainer:
 logger:
   project: adlr
   entity: ADLR2025
-  name: coordinate_change
+  name: checkpoint_10percent
 
 # ─── misc ───────────────────────────────────────────────────
 train:

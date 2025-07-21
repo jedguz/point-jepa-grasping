@@ -1,46 +1,41 @@
-# src/scripts/trainer_joint.py
 #!/usr/bin/env python3
 from __future__ import annotations
-import os, re, inspect, sys
-import copy, math
+import os, sys
 import hydra, pytorch_lightning as pl, torch
 torch.set_float32_matmul_precision('medium')
 
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
-from pytorch_lightning.loggers   import WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 
 from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
-from scripts.joint_regressor           import JointRegressor
-from scripts.checkpoint_utils          import fetch_checkpoint
-from scripts.checkpoint_utils          import load_full_checkpoint
+from scripts.joint_regressor import JointRegressor
+from scripts.checkpoint_utils import fetch_checkpoint, load_full_checkpoint
 from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
 
 
 @hydra.main(version_base="1.1", config_path="../../configs", config_name="train_joint")
 def main(cfg: DictConfig) -> None:
-    print("\n ---START TRAINING--: \n")                                                     
+    print("\n ---START TRAINING--: \n")
     pl.seed_everything(cfg.train.seed, workers=True)
 
-    # ─ checkpoint handling ───────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────────────
+    # Full-run checkpoint resume (optional)
+    # ────────────────────────────────────────────────────────────────────────
     os.makedirs(cfg.ckpt.local_dir, exist_ok=True)
     resume = None
-    if cfg.ckpt.filename:                               # only if user passes one
+    if cfg.ckpt.filename:
         ckpt_file = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.filename)
         ckpt_path = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.filename, ckpt_file)
-        resume = ckpt_path if ckpt_path and os.path.isfile(ckpt_path) else None
+        if ckpt_path and os.path.isfile(ckpt_path):
+            resume = ckpt_path
+            print(f">> Resuming training from checkpoint: {cfg.ckpt.filename}")
+        else:
+            print(f">> Checkpoint {cfg.ckpt.filename} not found, starting fresh run.")
 
-    max_epochs = cfg.trainer.max_epochs                 # <-- trust the YAML
-    print(f"⚙️ Training for {max_epochs} epoch(s)")
-
-    # ─ logger ────────────────────────────────────────────────────────────────
-    wandb_logger = WandbLogger(
-        project = cfg.logger.project,
-        entity  = cfg.logger.entity,
-        name    = cfg.logger.name,
-    )
-
-    # ─ data ──────────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────────────
+    # Data Module
+    # ────────────────────────────────────────────────────────────────────────
     print("\n ---INITIATE DATA MODULE---: \n")
     dm = DLRHand2JointDataModule(
         root_dir      = cfg.data.root_dir,
@@ -48,35 +43,37 @@ def main(cfg: DictConfig) -> None:
         batch_size    = cfg.data.batch_size,
         num_workers   = cfg.data.num_workers,
         num_points    = cfg.data.num_points,
-        score_temp     = cfg.data.score_temp,
-        split_file     = cfg.data.split_file,
-        preload_all   = cfg.data.preload_all,  
+        score_temp    = cfg.data.score_temp,
+        split_file    = cfg.data.split_file,
+        preload_all   = cfg.data.preload_all,
     )
 
-    # ─ model ─────────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────────────
+    # Model Initialization
+    # ────────────────────────────────────────────────────────────────────────
     print("\n ---INITIATE THE REGRESSION TRAINING PIPELINE---: \n")
     model = JointRegressor(
-        num_points           = cfg.data.num_points,
-        tokenizer_groups     = cfg.model.tokenizer_groups,
-        tokenizer_group_size = cfg.model.tokenizer_group_size,
-        tokenizer_radius     = cfg.model.tokenizer_radius,
-        transformations      = cfg.model.transformations,
-        coord_change         = cfg.model.coord_change,      
-        encoder_dim          = cfg.model.encoder_dim,
-        encoder_depth        = cfg.model.encoder_depth,
-        encoder_heads        = cfg.model.encoder_heads,
-        encoder_dropout      = cfg.model.encoder_dropout,
-        encoder_attn_dropout = cfg.model.encoder_attn_dropout,
-        encoder_drop_path_rate=cfg.model.encoder_drop_path_rate,
-        encoder_mlp_ratio    = cfg.model.encoder_mlp_ratio,
-        pooling_type         = cfg.model.pooling_type,
-        pooling_heads        = cfg.model.pooling_heads,
-        pooling_dropout      = 0.1,
-        head_hidden_dims     = cfg.model.head_hidden_dims,
-        pose_dim             = 7,
-        lr_backbone          = cfg.model.lr_backbone,
-        lr_head              = cfg.model.lr_head,
-        weight_decay         = cfg.model.weight_decay,
+        num_points             = cfg.data.num_points,
+        tokenizer_groups       = cfg.model.tokenizer_groups,
+        tokenizer_group_size   = cfg.model.tokenizer_group_size,
+        tokenizer_radius       = cfg.model.tokenizer_radius,
+        transformations        = cfg.model.transformations,
+        coord_change           = cfg.model.coord_change,
+        encoder_dim            = cfg.model.encoder_dim,
+        encoder_depth          = cfg.model.encoder_depth,
+        encoder_heads          = cfg.model.encoder_heads,
+        encoder_dropout        = cfg.model.encoder_dropout,
+        encoder_attn_dropout   = cfg.model.encoder_attn_dropout,
+        encoder_drop_path_rate = cfg.model.encoder_drop_path_rate,
+        encoder_mlp_ratio      = cfg.model.encoder_mlp_ratio,
+        pooling_type           = cfg.model.pooling_type,
+        pooling_heads          = cfg.model.pooling_heads,
+        pooling_dropout        = 0.1,
+        head_hidden_dims       = cfg.model.head_hidden_dims,
+        pose_dim               = 7,
+        lr_backbone            = cfg.model.lr_backbone,
+        lr_head                = cfg.model.lr_head,
+        weight_decay           = cfg.model.weight_decay,
         encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
         num_pred               = cfg.model.num_pred,
         loss_type              = cfg.model.loss_type,
@@ -85,14 +82,38 @@ def main(cfg: DictConfig) -> None:
         logit_scale_max        = cfg.model.logit_scale_max,
     )
 
-    print("\n ---LOAD THE JEPA CHECKPOINT---: \n")
-    if cfg.ckpt.get("backbone_filename"):
-        bb_local = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.backbone_filename)
-        bb_ckpt  = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.backbone_filename, bb_local)
+    # ────────────────────────────────────────────────────────────────────────
+    # Backbone checkpoint loading (controlled by boolean flag)
+    # ────────────────────────────────────────────────────────────────────────
+    print("\n ---BACKBONE CHECKPOINT HANDLING---: \n")
+    load_bb = cfg.ckpt.get("load_backbone", False)
+    if load_bb:
+        # require a valid filename
+        bb_filename = cfg.ckpt.get("backbone_filename", "").strip()
+        if not bb_filename:
+            raise ValueError("load_backbone is True but no backbone_filename provided in config.ckpt.backbone_filename")
+        bb_local = os.path.join(cfg.ckpt.local_dir, bb_filename)
+        bb_ckpt = fetch_checkpoint(cfg.ckpt.bucket, bb_filename, bb_local)
+        # error if missing
+        if not bb_ckpt or not os.path.isfile(bb_ckpt):
+            raise FileNotFoundError(f"Backbone checkpoint '{bb_filename}' not found in {cfg.ckpt.local_dir}")
         load_full_checkpoint(model, bb_ckpt)
+        print(f">> Loaded backbone weights from {bb_filename}")
+    else:
+        print(">> Skipping backbone checkpoint (load_backbone is False)")
 
-    # ─ trainer ───────────────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────────────────────────────
+    # Trainer setup
+    # ────────────────────────────────────────────────────────────────────────
     print("\n ---SET UP THE TRAINER---: \n")
+    wandb_logger = WandbLogger(
+        project = cfg.logger.project,
+        entity  = cfg.logger.entity,
+        name    = cfg.logger.name,
+    )
+    max_epochs = cfg.trainer.max_epochs
+    print(f"⚙️ Training for {max_epochs} epoch(s)")
+
     trainer = pl.Trainer(
         logger             = wandb_logger,
         accelerator        = cfg.trainer.accelerator,
@@ -109,6 +130,9 @@ def main(cfg: DictConfig) -> None:
         overfit_batches    = cfg.trainer.get("overfit_batches", 0),
     )
 
+    # ────────────────────────────────────────────────────────────────────────
+    # Start training
+    # ────────────────────────────────────────────────────────────────────────
     print("\n ---START FITTING---: \n")
     trainer.fit(model, datamodule=dm, ckpt_path=resume)
 
