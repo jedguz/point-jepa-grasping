@@ -19,7 +19,7 @@ data:
   preload_all: true     # eager preload
   root_dir: /mnt/disks/ssd #/studentGrasping/student_grasps_v1 # root_dir=data/dlr_hand2, when we load the whole dataset
   ssd_cache_dir: /mnt/disks/ssd/cache      # ← change from /mnt/disks/ssd/cache
-  split_file: configs/splits/split_10.json   # ← choose 10 / 25 / 50 / 100
+  split_file: configs/splits_new/split_10.json   # ← choose 10 / 25 / 50 / 100
   batch_size:    64
   num_workers:   4
   num_points:    1024
@@ -62,7 +62,7 @@ model:
 
 # ─── trainer args ───────────────────────────────────────────
 trainer:
-  max_epochs: 20
+  max_epochs: 10
   default_root_dir: artifacts
   accelerator: gpu
   devices: 1

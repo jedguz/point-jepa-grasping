@@ -12,22 +12,28 @@ defaults:
 
 data:
   # absolute path to the HDD dataset -----------------------------
-  root_dir: data/student_grasping/studentGrasping/student_grasps_v1
+  root_dir: data/student_grasping #/studentGrasping/student_grasps_v1
 
   # local cache so you don't write into /mnt/disks/ssd ----------
   ssd_cache_dir: cache
 
   # 10 % split manifest (relative paths stay portable) ----------
-  split_file: configs/splits/split_25.json  # 10 / 25/ 50 / 100
+  split_file: configs/splits_new/split_02.json  # 10 / 25/ 50 / 100
 
   # NEW flag: lazy or eager preload -----------------------------
-  preload_all: true
+  preload_all: false
 
-  batch_size:   8
+  batch_size:   16
   num_workers:  2
   score_temp:   0.0
 
 trainer:
-  default_root_dir: artifacts_hdd
-  max_epochs: 1
-  log_every_n_steps: 2
+#  default_root_dir: artifacts_hdd
+  max_epochs: 10
+ # log_every_n_steps: 2
+
+ # ─── logging ────────────────────────────────────────────────
+logger:
+  project: adlr
+  entity: ADLR2025
+  name: checkpoint_10percent_newsplit

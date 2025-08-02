@@ -101,10 +101,8 @@ def build_manifests(root: str, outdir: str):
 
     # ① list scenes once (quality-filtered)
     by_obj, by_syn = list_scenes(root)
-    regular_objs   = [o for o in by_obj if o.split("/")[0] not in HELD_OUT_SYNSETS]
-    objects_by_syn = defaultdict(list)
-    for o in regular_objs:
-        objects_by_syn[o.split("/")[0]].append(o)
+    regular_objs   = [o for o in by_obj
+                      if o.split("/")[0] not in HELD_OUT_SYNSETS]
 
     total_objs = len(regular_objs)
     print(f"📦  {total_objs} trainable objects after filtering")
@@ -122,6 +120,11 @@ def build_manifests(root: str, outdir: str):
     for syn in HELD_OUT_SYNSETS:
         eval_manifest["test_category"].extend(by_syn[syn])
 
+    # ---------- only TRAIN objects may be re-sampled ----------
+    objects_by_syn = defaultdict(list)
+    for o in train_pool:
+        objects_by_syn[o.split("/")[0]].append(o)
+
     # ③ build LOW-DATA subsets (only *train* changes)
     for pct in SUBSET_PERCENTS:
         rng.seed(SEED)                                   # reproducible per-pct
@@ -134,18 +137,20 @@ def build_manifests(root: str, outdir: str):
         print(f"  • {pct:5.2%} → {len(chosen)} train objects")
 
         manifest = {k: [] for k in ("train", *eval_manifest.keys())}
-        for k in eval_manifest:                          # fixed eval sets
+
+        # fixed evaluation splits
+        for k in eval_manifest:
             manifest[k].extend(eval_manifest[k])
 
-        for o in chosen:                                 # subset-specific train
+        # subset-specific train
+        for o in chosen:
             manifest["train"].extend(by_obj[o])
 
-        tag = f"{int(round(pct * 100)):02d}"             # 0.01 → "01", 1.0 → "100"
+        tag = f"{int(round(pct * 100)):02d}"             # 0.01 → "01", 1.00 → "100"
         fn  = pathlib.Path(outdir) / f"split_{tag}.json"
         with open(fn, "w") as f:
             json.dump(manifest, f, indent=2)
         print(f"     ✅  wrote {fn}")
-
 
 # ────────────────────────────────────────────────────────────────────────────────
 #  CLI
