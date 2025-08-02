@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-#python -m data.make_splits        data/student_grasping/studentGrasping/student_grasps_v1        configs/splits
+# python -m data.make_splits \
+#   data/student_grasping/studentGrasping/student_grasps_v1 \
+#   configs/splits
 """
-Create 25 %, 50 % and 100 % manifests *at the object level* and
-derive extra splits for grasp-level generalisation.
+Low-data manifests with a *fixed* evaluation suite.
 
-Folder layout (four levels):
+Splits produced per subset:
+  • train         –   object-level (subset-dependent)
+  • val           –   10 % objects, fixed across all subsets
+  • test_object   –   10 % objects, fixed
+  • test_category –   all objects in HELD_OUT_SYNSETS, fixed
+
+Grasps with quality/score < SCORE_THRESHOLD are discarded everywhere.
+Folder layout:
   root / <synsetID> / <objectID> / <sceneID> / recording.npz
 """
 
@@ -13,142 +21,142 @@ import argparse, json, os, glob, random, math, pathlib
 from collections import defaultdict
 import numpy as np
 
-## DONT CHANGE HOLDOUT SETS
-HELD_OUT_SYNSETS = {"03948459", "02954340"}
-SUBSET_PERCENTS  = [0.1, 0.25, 0.50, 1.00]      # 10%, 25 %, 50 %, 100 %
-VAL_PCT_OBJ      = 0.10                    # objects
-TEST_PCT_OBJ     = 0.10                    # objects
-TEST_PCT_SCENE   = 0.10                    # scenes per *seen* object
+# ────────────────────────────────────────────────────────────────────────────────
+#  CONFIG
+# ────────────────────────────────────────────────────────────────────────────────
+HELD_OUT_SYNSETS = {"03948459", "02954340"}               # unseen categories
+SUBSET_PERCENTS  = [0.01, 0.02, 0.05, 0.10, 0.15,
+                    0.25, 0.50, 1.00]                      # 1 % … 100 %
+VAL_PCT_OBJ      = 0.15                                    # 15 % objects
+TEST_PCT_OBJ     = 0.15                                    # 15 % objects
 SEED             = 42
-PATH_PREFIX = "studentGrasping/student_grasps_v1"
+PATH_PREFIX      = "studentGrasping/student_grasps_v1"
+SCORE_THRESHOLD  = 1.5
 
+# ────────────────────────────────────────────────────────────────────────────────
+#  HELPERS
+# ────────────────────────────────────────────────────────────────────────────────
 def list_scenes(root: str):
-    rec_paths = glob.glob(os.path.join(root, "**", "recording.npz"),
-                          recursive=True)
+    """Return look-ups (by object / synset) after score filtering."""
+    recs = glob.glob(os.path.join(root, "**", "recording.npz"), recursive=True)
     by_obj, by_syn = defaultdict(list), defaultdict(list)
 
-    for rp in rec_paths:
-        tail = os.path.relpath(rp, root)            # "02808440/…/recording.npz"
-        syn, obj, scene = tail.split(os.sep)[:3]    # correct IDs
+    for rp in recs:
+        tail = os.path.relpath(rp, root)                    # "028_…/recording.npz"
+        syn, obj, _ = tail.split(os.sep)[:3]
+        rel_json = os.path.join(PATH_PREFIX, tail)          # stored in manifest
 
-        rel_str = os.path.join(PATH_PREFIX, tail)   # prefixed path for JSON
-
-        key_obj = f"{syn}/{obj}"
         with np.load(rp) as d:
-            n_grasps = d["grasps"].shape[0]
-        samples = [(rel_str, gi) for gi in range(n_grasps)]
+            if "scores" in d:        scores = d["scores"]
+            elif "qualities" in d:   scores = d["qualities"]
+            else:
+                raise KeyError(f"{rp} lacks 'scores' / 'qualities'")
 
-        by_obj[key_obj].extend(samples)
+        keep = np.nonzero(scores >= SCORE_THRESHOLD)[0]
+        if keep.size == 0:
+            continue  # no good grasps
+
+        samples = [(rel_json, int(i)) for i in keep]
+        obj_key = f"{syn}/{obj}"
+        by_obj[obj_key].extend(samples)
         by_syn[syn].extend(samples)
 
     return by_obj, by_syn
 
+
 def split_objects(obj_keys, pct_val, pct_test, rng):
+    """Random object-level split; percentages refer to *obj_keys* length."""
     rng.shuffle(obj_keys)
-    n_val  = math.ceil(len(obj_keys)*pct_val)
-    n_test = math.ceil(len(obj_keys)*pct_test)
-    val_objs, test_objs = obj_keys[:n_val], obj_keys[n_val:n_val+n_test]
-    train_objs          = obj_keys[n_val+n_test:]
+    n_val  = math.ceil(len(obj_keys) * pct_val)
+    n_test = math.ceil(len(obj_keys) * pct_test)
+    val_objs   = obj_keys[: n_val]
+    test_objs  = obj_keys[n_val : n_val + n_test]
+    train_objs = obj_keys[n_val + n_test :]
     return train_objs, val_objs, test_objs
 
-def build_manifest(root, rng):
-    by_obj, by_syn = list_scenes(root)
-    regular_objs = [k for k in by_obj if k.split("/")[0] not in HELD_OUT_SYNSETS]
 
-    # object-level split
-    train_objs, val_objs, test_obj_objs = split_objects(regular_objs,
-                                                        VAL_PCT_OBJ, TEST_PCT_OBJ, rng)
+def stratified_sample(objects_by_syn, need, rng):
+    """Pick ≈need objects, ≥1 per synset (proportional otherwise)."""
+    total = sum(len(v) for v in objects_by_syn.values())
+    chosen = []
 
-    # collect samples
-    manifest = {k: [] for k in
-                ("train", "val", "test_object", "test_grasp", "test_category")}
+    for syn, objs in objects_by_syn.items():
+        share = max(1, int(round(len(objs) / total * need)))
+        chosen.extend(rng.sample(objs, k=min(share, len(objs))))
 
-    for o in train_objs:
-        samples = by_obj[o]
-        rng.shuffle(samples)
-        n_scene_holdout = math.ceil(len(samples)*TEST_PCT_SCENE)
-        manifest["test_grasp"].extend(samples[:n_scene_holdout])
-        manifest["train"].extend   (samples[n_scene_holdout:])
+    if len(chosen) < need:
+        remaining = [o for lst in objects_by_syn.values() for o in lst
+                     if o not in chosen]
+        rng.shuffle(remaining)
+        chosen.extend(remaining[: need - len(chosen)])
 
-    for o in val_objs:
-        manifest["val"].extend(by_obj[o])
+    return chosen[:need]   # trim overflow
 
-    for o in test_obj_objs:
-        manifest["test_object"].extend(by_obj[o])
 
-    # held-out categories
-    for syn in HELD_OUT_SYNSETS:
-        manifest["test_category"].extend(by_syn[syn])
-
-    return manifest
-
-def build_all(root, outdir):
+# ────────────────────────────────────────────────────────────────────────────────
+#  MANIFEST BUILD
+# ────────────────────────────────────────────────────────────────────────────────
+def build_manifests(root: str, outdir: str):
     rng = random.Random(SEED)
 
-    # ── list once, reuse
+    # ① list scenes once (quality-filtered)
     by_obj, by_syn = list_scenes(root)
-    regular_objs = [o for o in by_obj if o.split("/")[0] not in HELD_OUT_SYNSETS]
+    regular_objs   = [o for o in by_obj if o.split("/")[0] not in HELD_OUT_SYNSETS]
+    objects_by_syn = defaultdict(list)
+    for o in regular_objs:
+        objects_by_syn[o.split("/")[0]].append(o)
 
     total_objs = len(regular_objs)
-    print(f"📦  {total_objs} trainable objects found")
+    print(f"📦  {total_objs} trainable objects after filtering")
 
+    # ② build ONE global evaluation split (val + test_object)
+    train_pool, val_objs, test_obj_objs = split_objects(
+        regular_objs, VAL_PCT_OBJ, TEST_PCT_OBJ, rng
+    )
+
+    eval_manifest = {k: [] for k in ("val", "test_object", "test_category")}
+    for o in val_objs:
+        eval_manifest["val"].extend(by_obj[o])
+    for o in test_obj_objs:
+        eval_manifest["test_object"].extend(by_obj[o])
+    for syn in HELD_OUT_SYNSETS:
+        eval_manifest["test_category"].extend(by_syn[syn])
+
+    # ③ build LOW-DATA subsets (only *train* changes)
     for pct in SUBSET_PERCENTS:
-        # ---------------------------------------------------------- choose objects
-        rng.seed(SEED)         # reproducible for every pct
-        need = math.ceil(total_objs * pct)
-        chosen = rng.sample(regular_objs, k=need) if pct < 1.0 else regular_objs
-        print(f"  • {pct:4.0%}  →  {len(chosen)} objects")
+        rng.seed(SEED)                                   # reproducible per-pct
+        if pct < 1.0:
+            need   = math.ceil(len(train_pool) * pct)
+            chosen = stratified_sample(objects_by_syn, need, rng)
+        else:
+            chosen = train_pool
 
-        # ---------------------------------------------------------- prune helpers
-        pruned_by_obj = {k: v for k, v in by_obj.items() if k in chosen}
-        pruned_by_syn = defaultdict(list, {syn: by_syn[syn] for syn in HELD_OUT_SYNSETS})
-        for k, v in pruned_by_obj.items():
-            pruned_by_syn[k.split("/")[0]].extend(v)
-        # ---------------------------------------------------------- build manifest
-        manifest = build_manifest_from_lookup(
-            pruned_by_obj, pruned_by_syn, rng
-        )
+        print(f"  • {pct:5.2%} → {len(chosen)} train objects")
 
-        tag = {0.10: "10", 0.25: "25", 0.50: "50", 1.00: "100"}[pct]
+        manifest = {k: [] for k in ("train", *eval_manifest.keys())}
+        for k in eval_manifest:                          # fixed eval sets
+            manifest[k].extend(eval_manifest[k])
+
+        for o in chosen:                                 # subset-specific train
+            manifest["train"].extend(by_obj[o])
+
+        tag = f"{int(round(pct * 100)):02d}"             # 0.01 → "01", 1.0 → "100"
         fn  = pathlib.Path(outdir) / f"split_{tag}.json"
         with open(fn, "w") as f:
             json.dump(manifest, f, indent=2)
         print(f"     ✅  wrote {fn}")
 
 
-# ------------------------------------------------------------ helper = old build_manifest
-def build_manifest_from_lookup(by_obj, by_syn, rng):
-    """Identical to old build_manifest(), but takes pre-filtered look-ups."""
-    regular_objs = [k for k in by_obj if k.split("/")[0] not in HELD_OUT_SYNSETS]
-    train_objs, val_objs, test_obj_objs = split_objects(
-        regular_objs, VAL_PCT_OBJ, TEST_PCT_OBJ, rng
-    )
-
-    manifest = {k: [] for k in
-                ("train", "val", "test_object", "test_grasp", "test_category")}
-
-    for o in train_objs:
-        samples = by_obj[o]
-        rng.shuffle(samples)
-        n_scene_holdout = math.ceil(len(samples) * TEST_PCT_SCENE)
-        manifest["test_grasp"].extend(samples[:n_scene_holdout])
-        manifest["train"].extend(samples[n_scene_holdout:])
-
-    for o in val_objs:
-        manifest["val"].extend(by_obj[o])
-
-    for o in test_obj_objs:
-        manifest["test_object"].extend(by_obj[o])
-
-    # held-out categories
-    for syn in HELD_OUT_SYNSETS:
-        manifest["test_category"].extend(by_syn[syn])
-
-    return manifest
-
+# ────────────────────────────────────────────────────────────────────────────────
+#  CLI
+# ────────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("root",   help="data/student_grasping/studentGrasping/student_grasps_v1")
-    p.add_argument("outdir", help="configs/splits")
-    args = p.parse_args()
-    build_all(args.root, args.outdir)
+    ap = argparse.ArgumentParser(
+        description="Build fixed-evaluation JSON manifests for multiple data regimes"
+    )
+    ap.add_argument("root",
+                    help="data/student_grasping/studentGrasping/student_grasps_v1")
+    ap.add_argument("outdir", help="configs/splits")
+    args = ap.parse_args()
+
+    build_manifests(args.root, args.outdir)
