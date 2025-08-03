@@ -1,0 +1,27 @@
+# configs/trainer/steps.yaml
+# ─── core scheduling ────────────────────────────────────────
+max_steps:          25000        # total optimiser steps
+check_val_every_n_epoch: null     # 🔑 turn off epoch-end validation
+val_check_interval: 2500         # validation every N steps
+
+# ─── hardware & logging ─────────────────────────────────────
+accelerator: gpu
+devices: 1
+precision: 16-mixed
+default_root_dir: artifacts       # where PL stores checkpoints & logs
+log_every_n_steps: 50
+gradient_clip_val: 1.0            # leave as-is; trainer_joint.py uses .get()
+
+# ─── callbacks ──────────────────────────────────────────────
+callbacks:
+  - class_path: pytorch_lightning.callbacks.EarlyStopping
+    init_args:
+      monitor: val_loss
+      patience: 4
+      mode: min
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      monitor: val_loss
+      save_top_k: 1
+      mode: min
+      filename: joint-{step:06d}-{val_loss:.4f}

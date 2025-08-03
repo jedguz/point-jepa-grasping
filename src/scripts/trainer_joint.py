@@ -15,6 +15,7 @@ from scripts.joint_regressor import JointRegressor
 from scripts.checkpoint_utils import fetch_checkpoint, load_full_checkpoint
 from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
 from callbacks.additional_metrics_callbacks import AdditionalMetrics
+from callbacks.save_metrics_csv import SaveMetricsCSV 
 
 @hydra.main(version_base="1.1", config_path="../../configs", config_name="train_joint")
 def main(cfg: DictConfig) -> None:
@@ -107,26 +108,35 @@ def main(cfg: DictConfig) -> None:
     # ────────────────────────────────────────────────────────────────────────
     # Trainer setup
     # ────────────────────────────────────────────────────────────────────────
+    
     print("\n ---SET UP THE TRAINER---: \n")
     wandb_logger = WandbLogger(
         project = cfg.logger.project,
         entity  = cfg.logger.entity,
         name    = cfg.logger.name,
     )
-    max_epochs = cfg.trainer.max_epochs
-    print(f"⚙️ Training for {max_epochs} epoch(s)")
+
+    # SWITCHED EPOCHS TO STEPS
+    #max_epochs = cfg.trainer.max_epochs
+    #print(f"⚙️ Training for {max_epochs} epoch(s)")
+
+    # ✅ new
+    max_steps = cfg.trainer.max_steps
+    print(f"⚙️ Training for {max_steps:,} optimisation steps")
 
     trainer = pl.Trainer(
         logger             = wandb_logger,
         accelerator        = cfg.trainer.accelerator,
         devices            = cfg.trainer.devices,
         precision          = cfg.trainer.precision,
-        max_epochs         = max_epochs,
+ #       max_epochs         = max_epochs,
+        max_steps          = max_steps,
         default_root_dir   = cfg.trainer.default_root_dir,
         callbacks          = [
             LearningRateMonitor(logging_interval="epoch"),
             # BackboneEmbeddingInspector(num_batches=8),
-            AdditionalMetrics(tau_degrees=(10,20)),
+            AdditionalMetrics(tau_degrees=(10,15)),
+            SaveMetricsCSV(),
         ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
