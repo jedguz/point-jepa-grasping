@@ -143,6 +143,7 @@ def main(cfg: DictConfig) -> None:
         overfit_batches    = cfg.trainer.get("overfit_batches", 0),
         val_check_interval      = cfg.trainer.val_check_interval,
         check_val_every_n_epoch = cfg.trainer.check_val_every_n_epoch,
+        num_sanity_val_steps    = cfg.trainer.num_sanity_val_steps,  # ← NEW
     )
 
     # ────────────────────────────────────────────────────────────────────────

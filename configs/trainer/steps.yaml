@@ -4,6 +4,9 @@ max_steps:          25000        # total optimiser steps
 check_val_every_n_epoch: null     # 🔑 turn off epoch-end validation
 val_check_interval: 2500         # validation every N steps
 
+# ─── run one full-val at start ─────────────────────────────────
+num_sanity_val_steps:     -1           # –1 = run the *entire* val set once before training
+
 # ─── hardware & logging ─────────────────────────────────────
 accelerator: gpu
 devices: 1
