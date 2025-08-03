@@ -19,6 +19,7 @@ from modules.tokenizer   import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
 from utils               import transforms
 from scripts.pooling     import get_pooling
+from typing import Optional 
 
 
 class JointRegressor(pl.LightningModule):
@@ -232,7 +233,50 @@ class JointRegressor(pl.LightningModule):
         return total
 
     def training_step  (self, batch, _): return self._step(batch, "train")
-    def validation_step(self, batch, _): self._step(batch, "val")
+
+    # --------------------------------------------------------------------------
+    def validation_step(self, batch, batch_idx):
+        """Logs per-batch losses *and* returns tensors for epoch-level metrics."""
+        self._step(batch, "val")                     # existing loss logging
+
+        # -------- forward pass -------------------------------------------------
+        if self.loss_type == "basic":
+            angles = self(batch["points"], batch["pose"])       # (B,12)
+            logits = None
+        elif self.loss_type == "min_k":
+            angles = self(batch["points"], batch["pose"])       # (B,k,12)
+            logits = None
+        elif self.loss_type == "min_k_logit":
+            angles, logits = self(batch["points"], batch["pose"])
+        else:                                                   # loss_type == "full"
+            angles, logits, _ = self(batch["points"], batch["pose"])
+
+        return {
+            "pred_angles": angles.detach(),
+            "pred_logits": logits.detach() if logits is not None else None,
+            "gt_angles":   batch["joints"].detach(),
+        }
+
+
+    def test_step(self, batch, batch_idx):
+        """Identical to validation_step so callbacks run on the test loop, too."""
+        self._step(batch, "test")
+
+        if self.loss_type == "basic":
+            angles = self(batch["points"], batch["pose"]);  logits = None
+        elif self.loss_type == "min_k":
+            angles = self(batch["points"], batch["pose"]);  logits = None
+        elif self.loss_type == "min_k_logit":
+            angles, logits = self(batch["points"], batch["pose"])
+        else:
+            angles, logits, _ = self(batch["points"], batch["pose"])
+
+        return {
+            "pred_angles": angles.detach(),
+            "pred_logits": logits.detach() if logits is not None else None,
+            "gt_angles":   batch["joints"].detach(),
+        }
+    # --------------------------------------------------------------------------
 
     # -------------------------------------- optimiser
     def configure_optimizers(self):

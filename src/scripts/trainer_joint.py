@@ -7,12 +7,14 @@ torch.set_float32_matmul_precision('medium')
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import TQDMProgressBar
+
 
 from scripts.dlrhand2_joint_datamodule import DLRHand2JointDataModule
 from scripts.joint_regressor import JointRegressor
 from scripts.checkpoint_utils import fetch_checkpoint, load_full_checkpoint
 from callbacks.backbone_embedding_inspector import BackboneEmbeddingInspector
-
+from callbacks.additional_metrics_callbacks import AdditionalMetrics
 
 @hydra.main(version_base="1.1", config_path="../../configs", config_name="train_joint")
 def main(cfg: DictConfig) -> None:
@@ -124,6 +126,7 @@ def main(cfg: DictConfig) -> None:
         callbacks          = [
             LearningRateMonitor(logging_interval="epoch"),
             # BackboneEmbeddingInspector(num_batches=8),
+            AdditionalMetrics(tau_degrees=(10,20)),
         ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
