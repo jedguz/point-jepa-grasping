@@ -141,6 +141,8 @@ def main(cfg: DictConfig) -> None:
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
         gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
         overfit_batches    = cfg.trainer.get("overfit_batches", 0),
+        val_check_interval      = cfg.trainer.val_check_interval,
+        check_val_every_n_epoch = cfg.trainer.check_val_every_n_epoch,
     )
 
     # ────────────────────────────────────────────────────────────────────────
