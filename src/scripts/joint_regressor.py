@@ -49,6 +49,7 @@ class JointRegressor(pl.LightningModule):
         lr_head: float = 3e-3,
         weight_decay: float = 1e-2,
         encoder_unfreeze_epoch: int = 0,
+        encoder_unfreeze_step: int = 0,
         num_pred: int = 5,
         loss_type: str = "min_k_logit",
         logit_scale_init: float = 0.1,  
@@ -61,7 +62,7 @@ class JointRegressor(pl.LightningModule):
         self.coord_change            = coord_change
         self.num_pred                = num_pred
         self.loss_type               = loss_type
-        self.encoder_unfreeze_epoch  = encoder_unfreeze_epoch
+        self.encoder_unfreeze_step  = encoder_unfreeze_step
 
         # ---------------- tokenizer --------------------------
         self.tokenizer = PointcloudTokenizer(
@@ -180,7 +181,7 @@ class JointRegressor(pl.LightningModule):
 
         # full
         angles = pred[:, :pred_dim].view(-1, self.num_pred, 12)
-        logits = pred[:, pred_dim : pred_dim + self.num_pred]
+        logits = pred[:, pred_dim : pred_dim + self.num_pred].view(-1, self.num_pred)
         scores = pred[:, pred_dim + self.num_pred :].view(-1, self.num_pred)
         return angles, logits, scores
 
@@ -209,18 +210,17 @@ class JointRegressor(pl.LightningModule):
             loss_terms["angles"] = per_h.min(-1).values.mean()
             loss_terms["logit"]  = self.logit_scale * F.cross_entropy(logits, min_idx)
 
-
         elif self.loss_type == "full":
             angles, logits, scores = self(batch["points"], batch["pose"])
-            gt = batch["joints"].unsqueeze(1)
-            per_h = (angles - gt).pow(2).mean(-1)
+            gt = batch["joints"].unsqueeze(1)                       # (B,1,12)
+            per_h = (angles - gt).pow(2).mean(-1)                   # (B,k)
 
             min_idx = torch.argmin(per_h, dim=1)
+            predicted_score = scores.gather(1, min_idx.unsqueeze(1)).squeeze(1) 
+            
             loss_terms["angles"] = per_h.min(-1).values.mean()
             loss_terms["logit"]  = self.logit_scale * F.cross_entropy(logits, min_idx)
-            loss_terms["score"]  = 0.1 * F.mse_loss(
-                scores, batch["meta"]["score"].unsqueeze(1).expand(-1, self.num_pred)
-            )
+            loss_terms["score"]  = 0.01 * F.mse_loss(predicted_score, batch["meta"]["score"])
 
         # unified logging
         total = 0.0
@@ -243,17 +243,21 @@ class JointRegressor(pl.LightningModule):
         if self.loss_type == "basic":
             angles = self(batch["points"], batch["pose"])       # (B,12)
             logits = None
+            scores = None
         elif self.loss_type == "min_k":
             angles = self(batch["points"], batch["pose"])       # (B,k,12)
             logits = None
+            scores = None
         elif self.loss_type == "min_k_logit":
             angles, logits = self(batch["points"], batch["pose"])
+            scores = None
         else:                                                   # loss_type == "full"
-            angles, logits, _ = self(batch["points"], batch["pose"])
+            angles, logits, scores = self(batch["points"], batch["pose"])
 
         return {
             "pred_angles": angles.detach(),
             "pred_logits": logits.detach() if logits is not None else None,
+            "pred_scores": scores.detach() if scores is not None else None,
             "gt_angles":   batch["joints"].detach(),
         }
 
@@ -262,18 +266,25 @@ class JointRegressor(pl.LightningModule):
         """Identical to validation_step so callbacks run on the test loop, too."""
         self._step(batch, "test")
 
+        # -------- forward pass -------------------------------------------------
         if self.loss_type == "basic":
-            angles = self(batch["points"], batch["pose"]);  logits = None
+            angles = self(batch["points"], batch["pose"])       # (B,12)
+            logits = None
+            scores = None
         elif self.loss_type == "min_k":
-            angles = self(batch["points"], batch["pose"]);  logits = None
+            angles = self(batch["points"], batch["pose"])       # (B,k,12)
+            logits = None
+            scores = None
         elif self.loss_type == "min_k_logit":
             angles, logits = self(batch["points"], batch["pose"])
-        else:
-            angles, logits, _ = self(batch["points"], batch["pose"])
+            scores = None
+        else:                                                   # loss_type == "full"
+            angles, logits, scores = self(batch["points"], batch["pose"])
 
         return {
             "pred_angles": angles.detach(),
             "pred_logits": logits.detach() if logits is not None else None,
+            "pred_scores": scores.detach() if scores is not None else None,
             "gt_angles":   batch["joints"].detach(),
         }
     # --------------------------------------------------------------------------
@@ -353,12 +364,20 @@ class JointRegressor(pl.LightningModule):
     # ---------- END DEBUG -------------------------------------
     # --------------- freeze / unfreeze hooks --------------
     def on_train_start(self):
-        if self.encoder_unfreeze_epoch > 0:
+        if self.encoder_unfreeze_step > 0:
             for m in (self.tokenizer, self.positional_encoding, self.encoder):
                 m.requires_grad_(False)
 
+    """ EPOCH -> NOW STEP
     def on_train_epoch_start(self):
         if self.current_epoch == self.encoder_unfreeze_epoch:
-            self.print(">> Unfreezing backbone")
+            self.print(f">> Unfreezing encoder at epoch {self.current_epoch}")
+            for m in (self.tokenizer, self.positional_encoding, self.encoder):
+                m.requires_grad_(True)
+    """
+
+    def on_train_batch_start(self, batch, batch_idx):
+        if self.global_step == self.encoder_unfreeze_step:
+            self.print(f">> Unfreezing encoder at step {self.global_step}")
             for m in (self.tokenizer, self.positional_encoding, self.encoder):
                 m.requires_grad_(True)

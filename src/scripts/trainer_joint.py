@@ -78,6 +78,7 @@ def main(cfg: DictConfig) -> None:
         lr_head                = cfg.model.lr_head,
         weight_decay           = cfg.model.weight_decay,
         encoder_unfreeze_epoch = cfg.model.encoder_unfreeze_epoch,
+        encoder_unfreeze_step  = cfg.model.encoder_unfreeze_step,
         num_pred               = cfg.model.num_pred,
         loss_type              = cfg.model.loss_type,
         logit_scale_init       = cfg.model.logit_scale_init,
@@ -104,6 +105,11 @@ def main(cfg: DictConfig) -> None:
         print(f">> Loaded backbone weights from {bb_filename}")
     else:
         print(">> Skipping backbone checkpoint (load_backbone is False)")
+
+    # PRINT WEIGHT STATISTICS
+    #for name, param in model.named_parameters():
+    #    print(f"{name}: mean={param.data.mean().item():.5f}, std={param.data.std().item():.5f}")
+
 
     # ────────────────────────────────────────────────────────────────────────
     # Trainer setup
@@ -139,7 +145,7 @@ def main(cfg: DictConfig) -> None:
             SaveMetricsCSV(),
         ],
         log_every_n_steps  = cfg.trainer.log_every_n_steps,
-        gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 0.0),
+        gradient_clip_val  = cfg.trainer.get("gradient_clip_val", 1.0),
         overfit_batches    = cfg.trainer.get("overfit_batches", 0),
         val_check_interval      = cfg.trainer.val_check_interval,
         check_val_every_n_epoch = cfg.trainer.check_val_every_n_epoch,
