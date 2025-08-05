@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
+from utils.transforms    import PointcloudCoordChange
 from modules.tokenizer   import PointcloudTokenizer
 from modules.transformer import TransformerEncoder
 from utils               import transforms
@@ -102,7 +103,10 @@ class JointRegressor(pl.LightningModule):
         )
 
         # ------------------- head ----------------------------
-        in_dim = encoder_dim + pose_dim
+        if self.coord_change:
+            in_dim = encoder_dim
+        else:
+            in_dim = encoder_dim + pose_dim
 
         if   loss_type == "basic":        out_dim = 12
         elif loss_type == "min_k":        out_dim = 12 * num_pred
@@ -160,11 +164,20 @@ class JointRegressor(pl.LightningModule):
         obj_emb = self.pool(feats)
 
         if self.coord_change:
-            pose_vec = pose_vec.clone()
-            pose_vec[:, :3] -= centers.mean(dim=1)      # shift to object frame
-
-        fused = torch.cat([obj_emb, pose_vec], dim=-1)
-        pred  = self.head(fused)                        # (B, out_dim)
+            transformation = PointcloudCoordChange(pose_vec)
+            points = transformation(points)
+            tokens, centers = self.tokenizer(points)
+            pos   = self.positional_encoding(centers) * self.pe_scale
+            feats = self.encoder(tokens, pos).last_hidden_state
+            obj_emb = self.pool(feats)
+            pred    = self.head(obj_emb) 
+        else:
+            tokens, centers = self.tokenizer(points)
+            pos   = self.positional_encoding(centers) * self.pe_scale
+            feats = self.encoder(tokens, pos).last_hidden_state
+            obj_emb = self.pool(feats)
+            fused   = torch.cat([obj_emb, pose_vec], dim=-1)
+            pred    = self.head(fused)
 
         pred_dim = self.num_pred * 12
 
