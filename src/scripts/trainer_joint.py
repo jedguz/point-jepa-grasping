@@ -88,66 +88,51 @@ def main(cfg: DictConfig) -> None:
     )
 
     # ─────────────────────────────────────────────────────────────
-    # Backbone checkpoint loading (strongly verified)
+    # Backbone checkpoint loading (hardened, no cfg mutation)
     # ─────────────────────────────────────────────────────────────
-    import hashlib   # <-- top of file if not already imported
+    import hashlib, torch
 
     print("\n ---BACKBONE CHECKPOINT HANDLING (HARDENED)---: \n")
-    load_bb = bool(cfg.ckpt.get("load_backbone", False))
+    load_bb      = bool(cfg.ckpt.get("load_backbone", False))
+    bb_filename  = cfg.ckpt.get("backbone_filename", "").strip()
 
-    # 1. Mutual-exclusion guard
-    bb_filename = cfg.ckpt.get("backbone_filename", "").strip()
-    if load_bb is False and bb_filename:
-        raise ValueError(
-            "cfg.ckpt.load_backbone is False **but** backbone_filename is set "
-            f"({bb_filename}). Either set load_backbone=True or clear the filename."
-        )
-    if load_bb is True and not bb_filename:
-        raise ValueError(
-            "cfg.ckpt.load_backbone is True but backbone_filename is empty."
-        )
+    # 1️⃣  Guard against conflicting settings
+    if not load_bb and bb_filename:
+        raise ValueError("ckpt.load_backbone=False but backbone_filename is set.")
+    if load_bb and not bb_filename:
+        raise ValueError("ckpt.load_backbone=True but backbone_filename is empty.")
+
+    # This dict will be logged to WandB later
+    backbone_info = {"filename": None, "tensors": 0}
 
     if load_bb:
-        bb_local = os.path.join(cfg.ckpt.local_dir, bb_filename)
-        bb_ckpt = fetch_checkpoint(cfg.ckpt.bucket, bb_filename, bb_local)
+        bb_local  = os.path.join(cfg.ckpt.local_dir, bb_filename)
+        bb_ckpt   = fetch_checkpoint(cfg.ckpt.bucket, bb_filename, bb_local)
         if not bb_ckpt or not os.path.isfile(bb_ckpt):
-            raise FileNotFoundError(
-                f"Backbone checkpoint '{bb_filename}' not found in {cfg.ckpt.local_dir}"
-            )
+            raise FileNotFoundError(f"Checkpoint '{bb_filename}' not found.")
 
-        # 2. Optional SHA-256 verification (add your own hash in the config)
-        expected_sha256 = cfg.ckpt.get("backbone_sha256", "").strip()
-        if expected_sha256:
+        # 2️⃣  Optional SHA-256 verification (set backbone_sha256 in YAML to activate)
+        want_sha = cfg.ckpt.get("backbone_sha256", "").strip()
+        if want_sha:
             with open(bb_ckpt, "rb") as f:
-                file_hash = hashlib.sha256(f.read()).hexdigest()
-            if file_hash != expected_sha256:
-                raise ValueError(
-                    f"SHA-256 mismatch for {bb_filename}:\n"
-                    f"  expected {expected_sha256}\n"
-                    f"  actual   {file_hash}"
-                )
-            print(f">> Checksum OK: {file_hash}")
+                got_sha = hashlib.sha256(f.read()).hexdigest()
+            if got_sha != want_sha:
+                raise ValueError(f"SHA-256 mismatch for {bb_filename}")
+            print(f">> Checksum OK: {got_sha}")
 
-        # 3. Load the weights
-        n_loaded = load_full_checkpoint(model, bb_ckpt)  # <-- change your util to return count
+        # 3️⃣  Load weights via existing util (unchanged)
+        load_full_checkpoint(model, bb_ckpt)
+
+        # 4️⃣  Count overlapping tensors (strict enough for our purposes)
+        sd_ckpt  = torch.load(bb_ckpt, map_location="cpu").get("state_dict", {})
+        overlap  = [k for k in sd_ckpt if k in model.state_dict()]
+        n_loaded = len(overlap)
         if n_loaded == 0:
-            raise RuntimeError(
-                "load_full_checkpoint reported 0 parameters loaded – aborting."
-            )
-        print(f">> Loaded {n_loaded:,} backbone parameters from {bb_filename}")
+            raise RuntimeError("Checkpoint contained 0 matching tensors – aborting.")
 
-        # 4. Log hash & count to WandB for audit
-        wandb_logger = None  # you haven't built it yet; stash in cfg and add later
-        cfg._loaded_backbone = {
-            "filename": bb_filename,
-            "sha256": expected_sha256 or file_hash,
-            "params_loaded": n_loaded,
-        }
+        print(f">> Loaded backbone tensors: {n_loaded:,}  (file: {bb_filename})")
 
-    else:
-        print(">> Skipping backbone checkpoint (load_backbone=False)")
-        cfg._loaded_backbone = {"filename": None}
-
+        backbone_info.update(filename=bb_filename, tensors=n_loaded)
     # ────────────────────────────────────────────────────────────────────────
     # Trainer setup
     # ────────────────────────────────────────────────────────────────────────
@@ -159,7 +144,7 @@ def main(cfg: DictConfig) -> None:
         name    = cfg.logger.name,
     )
 
-    wandb_logger.experiment.config.update({"backbone_info": cfg._loaded_backbone})
+    wandb_logger.experiment.config.update({"backbone_info": backbone_info})
 
     # SWITCHED EPOCHS TO STEPS
     #max_epochs = cfg.trainer.max_epochs
