@@ -87,30 +87,66 @@ def main(cfg: DictConfig) -> None:
         logit_scale_max        = cfg.model.logit_scale_max,
     )
 
-    # ────────────────────────────────────────────────────────────────────────
-    # Backbone checkpoint loading (controlled by boolean flag)
-    # ────────────────────────────────────────────────────────────────────────
-    print("\n ---BACKBONE CHECKPOINT HANDLING---: \n")
-    load_bb = cfg.ckpt.get("load_backbone", False)
+    # ─────────────────────────────────────────────────────────────
+    # Backbone checkpoint loading (strongly verified)
+    # ─────────────────────────────────────────────────────────────
+    import hashlib   # <-- top of file if not already imported
+
+    print("\n ---BACKBONE CHECKPOINT HANDLING (HARDENED)---: \n")
+    load_bb = bool(cfg.ckpt.get("load_backbone", False))
+
+    # 1. Mutual-exclusion guard
+    bb_filename = cfg.ckpt.get("backbone_filename", "").strip()
+    if load_bb is False and bb_filename:
+        raise ValueError(
+            "cfg.ckpt.load_backbone is False **but** backbone_filename is set "
+            f"({bb_filename}). Either set load_backbone=True or clear the filename."
+        )
+    if load_bb is True and not bb_filename:
+        raise ValueError(
+            "cfg.ckpt.load_backbone is True but backbone_filename is empty."
+        )
+
     if load_bb:
-        # require a valid filename
-        bb_filename = cfg.ckpt.get("backbone_filename", "").strip()
-        if not bb_filename:
-            raise ValueError("load_backbone is True but no backbone_filename provided in config.ckpt.backbone_filename")
         bb_local = os.path.join(cfg.ckpt.local_dir, bb_filename)
         bb_ckpt = fetch_checkpoint(cfg.ckpt.bucket, bb_filename, bb_local)
-        # error if missing
         if not bb_ckpt or not os.path.isfile(bb_ckpt):
-            raise FileNotFoundError(f"Backbone checkpoint '{bb_filename}' not found in {cfg.ckpt.local_dir}")
-        load_full_checkpoint(model, bb_ckpt)
-        print(f">> Loaded backbone weights from {bb_filename}")
+            raise FileNotFoundError(
+                f"Backbone checkpoint '{bb_filename}' not found in {cfg.ckpt.local_dir}"
+            )
+
+        # 2. Optional SHA-256 verification (add your own hash in the config)
+        expected_sha256 = cfg.ckpt.get("backbone_sha256", "").strip()
+        if expected_sha256:
+            with open(bb_ckpt, "rb") as f:
+                file_hash = hashlib.sha256(f.read()).hexdigest()
+            if file_hash != expected_sha256:
+                raise ValueError(
+                    f"SHA-256 mismatch for {bb_filename}:\n"
+                    f"  expected {expected_sha256}\n"
+                    f"  actual   {file_hash}"
+                )
+            print(f">> Checksum OK: {file_hash}")
+
+        # 3. Load the weights
+        n_loaded = load_full_checkpoint(model, bb_ckpt)  # <-- change your util to return count
+        if n_loaded == 0:
+            raise RuntimeError(
+                "load_full_checkpoint reported 0 parameters loaded – aborting."
+            )
+        print(f">> Loaded {n_loaded:,} backbone parameters from {bb_filename}")
+
+        # 4. Log hash & count to WandB for audit
+        wandb_logger = None  # you haven't built it yet; stash in cfg and add later
+        cfg._loaded_backbone = {
+            "filename": bb_filename,
+            "sha256": expected_sha256 or file_hash,
+            "params_loaded": n_loaded,
+        }
+
     else:
-        print(">> Skipping backbone checkpoint (load_backbone is False)")
-
-    # PRINT WEIGHT STATISTICS
-    #for name, param in model.named_parameters():
-    #    print(f"{name}: mean={param.data.mean().item():.5f}, std={param.data.std().item():.5f}")
-
+        print(">> Skipping backbone checkpoint (load_backbone=False)")
+        cfg._loaded_backbone = {"filename": None}
 
     # ────────────────────────────────────────────────────────────────────────
     # Trainer setup
@@ -122,6 +158,8 @@ def main(cfg: DictConfig) -> None:
         entity  = cfg.logger.entity,
         name    = cfg.logger.name,
     )
+
+    wandb_logger.experiment.config.update({"backbone_info": cfg._loaded_backbone})
 
     # SWITCHED EPOCHS TO STEPS
     #max_epochs = cfg.trainer.max_epochs
