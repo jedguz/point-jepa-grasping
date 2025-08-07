@@ -1,0 +1,82 @@
+# configs/full.yaml
+# ─────────────────────────────────────────────────────────────
+ckpt:
+  filename: ""                       # resume-from-ckpt (leave blank)
+  bucket: adlr2025-pointclouds
+  local_dir: checkpoints
+  load_backbone: true
+  backbone_filename: pretrain_pointjepa_epoch=499-step=40500.ckpt
+
+data:
+  preload_all: true
+  root_dir: /mnt/disks/ssd
+  ssd_cache_dir: /mnt/disks/ssd/cache
+  split_file: configs/splits/split_05.json      # 1 % split
+  batch_size: 32
+  num_workers: 4
+  num_points: 1024
+  score_temp: 0.0
+
+model:
+  # tokenizer
+  tokenizer_groups: 64
+  tokenizer_group_size: 32
+  tokenizer_radius: 0.05
+  transformations: [none]
+  coord_change: false
+  # encoder (frozen JEPA backbone dims)
+  encoder_dim: 384
+  encoder_depth: 12
+  encoder_heads: 8
+  encoder_dropout: 0.1
+  encoder_attn_dropout: 0.1
+  encoder_drop_path_rate: 0.1
+  encoder_mlp_ratio: 4
+  # pooling + head
+  pooling_type: att
+  pooling_heads: 4
+  pooling_dropout: 0.1
+  num_pred: 5
+  head_hidden_dims: [512, 256, 128]
+  head_dropout: 0.10          # ← NEW
+  loss_type: min_k_logit  # basic | min_k | min_k_logit | full
+  # log-it-scale
+  logit_scale_init: 0.1
+  logit_scale_min: 0.01
+  logit_scale_max: 6.0
+  # learning rates (will be overridden in the sweep)
+  lr_backbone: 3e-5
+  lr_head: 2e-3
+  encoder_unfreeze_epoch: 0
+  encoder_unfreeze_step: 0
+  weight_decay: 0.02
+
+trainer:
+  max_steps: 6000
+  check_val_every_n_epoch: null
+  val_check_interval: 1500
+  limit_val_batches: 0.5
+  num_sanity_val_steps: -1
+  accelerator: gpu
+  devices: 1
+  precision: 16-mixed
+  default_root_dir: artifacts
+  log_every_n_steps: 50
+  gradient_clip_val: 1.0
+  overfit_batches: 0
+
+logger:
+  _target_: pytorch_lightning.loggers.WandbLogger
+  project: adlr
+  entity: ADLR2025
+  group: one_pct_sweep
+  # single line – no YAML line-breaks!
+  name: "lh=${oc.select:model.lr_head,NA}_lb=${oc.select:model.lr_backbone,NA}_uf=${oc.select:model.encoder_unfreeze_step,NA}"
+  save_code: true                    # keep if you want W&B to snapshot the repo
+
+train:
+  seed: 42                           # required by your script
+
+hydra:
+  job:
+    chdir: true

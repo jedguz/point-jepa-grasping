@@ -1,0 +1,12 @@
+# configs/sweep.yaml
+defaults:
+  - full          # load your full.yaml first
+  - _self_        # then merge this file on top
+
+hydra:
+  mode: MULTIRUN          # so you don’t need the -m flag
+  sweeper:
+    params:
+      model.lr_head: 1e-3,2e-3
+      model.lr_backbone: 1e-5,1e-4,7e-5
+      model.encoder_unfreeze_step: 0

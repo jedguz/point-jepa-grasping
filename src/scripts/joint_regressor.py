@@ -41,6 +41,7 @@ class JointRegressor(pl.LightningModule):
         encoder_attn_dropout: float,
         encoder_drop_path_rate: float,
         encoder_mlp_ratio: float,
+        head_dropout: float = 0.10,      # ← NEW
         pooling_type: str,
         pooling_heads: int,
         pooling_dropout: float,
@@ -129,7 +130,11 @@ class JointRegressor(pl.LightningModule):
 
         mlp: list[nn.Module] = []
         for i in range(len(dims) - 2):
-            mlp.extend([nn.Linear(dims[i], dims[i + 1]), nn.ReLU()])
+            mlp.extend([
+                nn.Linear(dims[i], dims[i + 1]),
+                nn.ReLU(),
+                nn.Dropout(head_dropout)          # ← NEW
+            ])
         mlp.append(nn.Linear(dims[-2], dims[-1]))
         self.head = nn.Sequential(*mlp)
 

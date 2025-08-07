@@ -3,6 +3,7 @@
 #
 # for training on SSD ./data/dlrhand2_dataset_loader.sh gs://adlr2025-pointclouds/grasps/student_grasps_v1/studentGrasping_v1.tar.gz /mnt/disks/ssd 100 --mode ordered --by categories
 # SSD needs all the data available for the JSON splits
+# configs/train_joint.yaml
 #------------------------------------------------------------
 
 # ─── checkpoint settings ────────────────────────────────────

@@ -1,8 +1,11 @@
 # configs/trainer/steps.yaml
+defaults:
+  - /train_joint       # ← NEW: pull the full experiment spec in first
+  - _self_            # keep this second (Hydra rule)
 # ─── core scheduling ────────────────────────────────────────
-max_steps:          4000        # total optimiser steps
+max_steps:          7500        # total optimiser steps
 check_val_every_n_epoch: null     # 🔑 turn off epoch-end validation
-val_check_interval: 1000         # validation every N steps
+val_check_interval: 1500         # validation every N steps
 limit_val_batches: 0.5    # use 50 % of the validation set
 
 # ─── run one full-val at start ─────────────────────────────────

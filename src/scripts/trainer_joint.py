@@ -73,6 +73,7 @@ def main(cfg: DictConfig) -> None:
         pooling_heads          = cfg.model.pooling_heads,
         pooling_dropout        = 0.1,
         head_hidden_dims       = cfg.model.head_hidden_dims,
+        head_dropout           = cfg.model.head_dropout,  # ← NEW
         pose_dim               = 7,
         lr_backbone            = cfg.model.lr_backbone,
         lr_head                = cfg.model.lr_head,
