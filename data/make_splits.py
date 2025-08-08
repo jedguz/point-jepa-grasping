@@ -25,11 +25,12 @@ import numpy as np
 #  CONFIG
 # ────────────────────────────────────────────────────────────────────────────────
 HELD_OUT_SYNSETS = {"03948459", "02954340"}               # unseen categories
-SUBSET_PERCENTS  = [0.01, 0.02, 0.05, 0.10, 0.15,
-                    0.25, 0.50, 1.00]                      # 1 % … 100 %
+#SUBSET_PERCENTS  = [0.01, 0.02, 0.05, 0.10, 0.15,
+#                    0.25, 0.50, 1.00]                      # 1 % … 100 %
+SUBSET_PERCENTS  = [0.05]
 VAL_PCT_OBJ      = 0.10                                    # 10 % objects
 TEST_PCT_OBJ     = 0.10                                    # 10 % objects
-SEED             = 42
+SEED             = 5
 PATH_PREFIX      = "studentGrasping/student_grasps_v1"
 SCORE_THRESHOLD  = 1.5
 

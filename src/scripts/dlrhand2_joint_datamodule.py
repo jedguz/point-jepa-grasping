@@ -228,6 +228,7 @@ class DLRHand2JointDataModule(pl.LightningDataModule):
             sampler=sampler,
             num_workers=self.hparams.num_workers,
             pin_memory=True,
+            persistent_workers = True,           #  ← NEW
         )
 
     def train_dataloader         (self): return self._loader("train", True)

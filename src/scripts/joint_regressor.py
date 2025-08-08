@@ -205,42 +205,44 @@ class JointRegressor(pl.LightningModule):
 
     # -------------------------------------- training / val
     def _step(self, batch, stage: str):
-        loss_terms = {}
-        B = batch["points"].size(0)
+        # ── fast host→GPU copy (requires pin_memory=True in DataLoader) ──
+        points = batch["points"].to(self.device, non_blocking=True)
+        pose   = batch["pose"]  .to(self.device, non_blocking=True)
+        joints = batch["joints"].to(self.device, non_blocking=True)
 
+        loss_terms = {}
+        B = points.size(0)
+
+        # ------------------------------------------------------------- losses
         if self.loss_type == "basic":
-            pred = self(batch["points"], batch["pose"])
-            loss_terms["angles"] = F.mse_loss(pred, batch["joints"])
+            pred = self(points, pose)                               # (B,12)
+            loss_terms["angles"] = F.mse_loss(pred, joints)
 
         elif self.loss_type == "min_k":
-            angles = self(batch["points"], batch["pose"])          # (B,k,12)
-            gt = batch["joints"].unsqueeze(1)                      # (B,1,12)
-            per_h = (angles - gt).pow(2).mean(-1)                  # (B,k)
+            angles = self(points, pose)                             # (B,k,12)
+            per_h  = (angles - joints.unsqueeze(1)).pow(2).mean(-1) # (B,k)
             loss_terms["angles"] = per_h.min(-1).values.mean()
 
         elif self.loss_type == "min_k_logit":
-            angles, logits = self(batch["points"], batch["pose"])
-            gt = batch["joints"].unsqueeze(1)                       # (B,1,12)
-            per_h = (angles - gt).pow(2).mean(-1)                   # (B,k)
-
-            min_idx = torch.argmin(per_h, dim=1)                    # hard label ∈ {0…k‑1}
-
+            angles, logits = self(points, pose)                     # (B,k,12)
+            per_h  = (angles - joints.unsqueeze(1)).pow(2).mean(-1)
+            min_idx = torch.argmin(per_h, dim=1)                    # (B,)
             loss_terms["angles"] = per_h.min(-1).values.mean()
             loss_terms["logit"]  = self.logit_scale * F.cross_entropy(logits, min_idx)
 
-        elif self.loss_type == "full":
-            angles, logits, scores = self(batch["points"], batch["pose"])
-            gt = batch["joints"].unsqueeze(1)                       # (B,1,12)
-            per_h = (angles - gt).pow(2).mean(-1)                   # (B,k)
-
+        else:  # loss_type == "full"
+            angles, logits, scores = self(points, pose)
+            per_h  = (angles - joints.unsqueeze(1)).pow(2).mean(-1)
             min_idx = torch.argmin(per_h, dim=1)
-            predicted_score = scores.gather(1, min_idx.unsqueeze(1)).squeeze(1) 
-            
+            pred_score = scores.gather(1, min_idx.unsqueeze(1)).squeeze(1)
             loss_terms["angles"] = per_h.min(-1).values.mean()
             loss_terms["logit"]  = self.logit_scale * F.cross_entropy(logits, min_idx)
-            loss_terms["score"]  = 0.01 * F.mse_loss(predicted_score, batch["meta"]["score"])
+            loss_terms["score"]  = 0.01 * F.mse_loss(
+                pred_score,
+                batch["meta"]["score"].to(self.device, non_blocking=True),
+            )
 
-        # unified logging
+        # ---------------------------------------------------------- logging
         total = 0.0
         for k, v in loss_terms.items():
             self.log(f"{stage}_loss_{k}", v, prog_bar=True, batch_size=B)
@@ -248,6 +250,7 @@ class JointRegressor(pl.LightningModule):
         self.log(f"{stage}_loss", total, prog_bar=True, batch_size=B)
         if hasattr(self, "logit_scale_raw"):
             self.log(f"{stage}_logit_scale", self.logit_scale.item(), prog_bar=True)
+
         return total
 
     def training_step  (self, batch, _): return self._step(batch, "train")
