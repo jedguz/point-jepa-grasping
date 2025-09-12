@@ -23,18 +23,24 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.train.seed, workers=True)
 
     # ────────────────────────────────────────────────────────────────────────
-    # Full-run checkpoint resume (optional)
+    # Full-run checkpoint resume (optional) — LOCAL-FIRST
     # ────────────────────────────────────────────────────────────────────────
     os.makedirs(cfg.ckpt.local_dir, exist_ok=True)
     resume = None
     if cfg.ckpt.filename:
         ckpt_file = os.path.join(cfg.ckpt.local_dir, cfg.ckpt.filename)
-        ckpt_path = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.filename, ckpt_file)
-        if ckpt_path and os.path.isfile(ckpt_path):
-            resume = ckpt_path
-            print(f">> Resuming training from checkpoint: {cfg.ckpt.filename}")
+
+        # LOCAL-FIRST: if file exists on disk, use it; otherwise try to fetch remotely
+        if os.path.isfile(ckpt_file):
+            resume = ckpt_file
+            print(f">> Resuming training from local checkpoint: {ckpt_file}")
         else:
-            print(f">> Checkpoint {cfg.ckpt.filename} not found, starting fresh run.")
+            ckpt_path = fetch_checkpoint(cfg.ckpt.bucket, cfg.ckpt.filename, ckpt_file)
+            if ckpt_path and os.path.isfile(ckpt_path):
+                resume = ckpt_path
+                print(f">> Resuming training from fetched checkpoint: {cfg.ckpt.filename}")
+            else:
+                print(f">> Checkpoint {cfg.ckpt.filename} not found, starting fresh run.")
 
     # ────────────────────────────────────────────────────────────────────────
     # Data Module
@@ -106,10 +112,21 @@ def main(cfg: DictConfig) -> None:
     backbone_info = {"filename": None, "tensors": 0}
 
     if load_bb:
+
         bb_local  = os.path.join(cfg.ckpt.local_dir, bb_filename)
-        bb_ckpt   = fetch_checkpoint(cfg.ckpt.bucket, bb_filename, bb_local)
+
+        # LOCAL-FIRST: use local file if present; else try to fetch from remote bucket (if provided)
+        if os.path.isfile(bb_local):
+            bb_ckpt = bb_local
+            print(f">> Using local backbone checkpoint: {bb_ckpt}")
+        else:
+            bb_ckpt = fetch_checkpoint(cfg.ckpt.bucket, bb_filename, bb_local)
+
         if not bb_ckpt or not os.path.isfile(bb_ckpt):
-            raise FileNotFoundError(f"Checkpoint '{bb_filename}' not found.")
+            raise FileNotFoundError(
+                f"Checkpoint '{bb_filename}' not found at {bb_local}. "
+                "Download it there manually, or set ckpt.bucket to a remote location."
+            )
 
         # 2️⃣  Optional SHA-256 verification (set backbone_sha256 in YAML to activate)
         want_sha = cfg.ckpt.get("backbone_sha256", "").strip()
@@ -129,10 +146,10 @@ def main(cfg: DictConfig) -> None:
         n_loaded = len(overlap)
         if n_loaded == 0:
             raise RuntimeError("Checkpoint contained 0 matching tensors – aborting.")
-
         print(f">> Loaded backbone tensors: {n_loaded:,}  (file: {bb_filename})")
 
         backbone_info.update(filename=bb_filename, tensors=n_loaded)
+        
     # ────────────────────────────────────────────────────────────────────────
     # Trainer setup
     # ────────────────────────────────────────────────────────────────────────
