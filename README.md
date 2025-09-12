@@ -61,9 +61,9 @@ Pretrain a Point–JEPA backbone on ShapeNet point clouds, then fine-tune a ligh
 
 ## Extended Figures (not in paper due to space; included here)
 
-- Selection-gap vs budget: `artifacts/selection_gap.png`  
-- Coverage@15° vs budget: `artifacts/coverage15.png`  
-- LR sensitivity grid (10%): `artifacts/ft_lr.png`  
+- Selection-gap vs budget: ![Selection Gap](artifacts/selection_gap.png)
+- Coverage@15° vs budget: ![Coverage@15°](artifacts/coverage15.png)
+- LR sensitivity grid (10%): ![LR Selection](artifacts/ft_lr.png) 
 
 ---
 
