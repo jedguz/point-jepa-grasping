@@ -109,7 +109,6 @@ We use the official **Point–JEPA** encoder checkpoint released by the authors 
 Ensure that bucket="" in the config if checkpoint is saved locally.
 
 ---
-
 ## Training (downstream grasp head & optional JEPA fine-tuning)
 
 **Single run (example):** Pack A, 25% budget, JEPA fine-tune, seed 0
@@ -123,23 +122,25 @@ python trainer_joint.py --config-name full \
 ```
 
 ### Loss
-$$
-k^{*}=\arg\min_{k}\lVert \hat{j}_{k}-j \rVert_{2},\quad
-\mathcal{L}=\lVert \hat{j}_{k^{*}}-j \rVert_{2}+\alpha\,\mathrm{CE}(\ell,k^{*}).
-$$
+\[
+k^{\star}=\arg\min_{k}\lVert \hat{j}_{k}-j \rVert_{2},\quad
+\mathcal{L}=\lVert \hat{j}_{k^{\star}}-j \rVert_{2}+\alpha\,\mathrm{CE}(\ell,k^{\star}).
+\]
+
+**Inference:** uses **top-logit**.
 
 ---
 
 ## Reproduce the paper grid (one line)
 
-# Runs both packs (A and B) with default budgets:
-#  - Pack A: 1,10,25,100 (seed=0)
-#  - Pack B: 25,100      (seed=1)
-python sweep_joint.py --packs A B
+Runs both packs (A and B) with default budgets:
+ - Pack A: 1,10,25,100 (seed=0)
+ - Pack B: 25,100      (seed=1)
 
-Note:
-- Ensure the Point–JEPA checkpoint is present locally at:
-  checkpoints/pointjepa/pretrain_pointjepa_epoch=499-step=40500.ckpt
+
+`python sweep_joint.py --packs A B`
+
+Ensure the Point–JEPA checkpoint is present locally at: `checkpoints/pointjepa/pretrain_pointjepa_epoch=499-step=40500.ckpt`.
 
 ---
 
