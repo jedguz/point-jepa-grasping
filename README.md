@@ -14,7 +14,7 @@ Pretrain a Point–JEPA backbone on ShapeNet point clouds, then fine-tune a ligh
 
 ## Method Overview
 
-![Point–JEPA pretraining](artifacts/pipeline.png)
+![Point–JEPA pretraining](artifacts/pretrain.png)
 *Meshes → point clouds → tokenized patches → self-distilled JEPA features. The predictor and EMA target are discarded after pretraining; we keep the context encoder.*
 
 
