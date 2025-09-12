@@ -124,7 +124,7 @@ python trainer_joint.py --config-name full \
 ### Loss
 $$
 k^{\star}=\arg\min_{k}\lVert \hat{j}_{k}-j \rVert_{2},\quad
-\mathcal{L}=\lVert \hat{j}_{k^{\star}}-j \rVert_{2}+\alpha\,\mathrm{CE}(\ell,k^{\star}).
+\mathcal{L}=\lVert \hat{j}_{k^{\star}}-j \rVert_{2}+\alpha\ \cdot \mathrm{CE}(\ell,k^{\star}).
 $$
 
 **Inference:** uses **top-logit**.
